@@ -29,15 +29,30 @@ export interface ExecutionConfig {
 // Aave V3 Pool addresses (same address across networks)
 const AAVE_V3_POOL: Record<string, string> = {
   avalanche: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-  arbitrum: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-  optimism: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  arbitrum:  "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  optimism:  "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+};
+
+// ArbitrageBot.sol deployed addresses — fill in after running contracts/deploy.js
+// e.g. "avalanche": "0xYourDeployedContractAddress"
+const CONTRACT_ADDRESSES: Record<string, string> = {
+  avalanche: "",
+  arbitrum:  "",
+  optimism:  "",
 };
 
 // USDT contract addresses per network
 const USDT_ADDRESSES: Record<string, string> = {
   avalanche: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
-  arbitrum: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
-  optimism: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+  arbitrum:  "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+  optimism:  "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+};
+
+// WBTC contract addresses per network
+const WBTC_ADDRESSES: Record<string, string> = {
+  avalanche: "0x50b7545627a5162F82A992c33b87aDc75187B218",
+  arbitrum:  "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+  optimism:  "0x68f180fcCe6836688e9084f035309E29Bf0A2095",
 };
 
 // Public RPC endpoints per network
@@ -206,14 +221,64 @@ export async function executeFlashLoan(
     };
   }
 
-  // Simulate execution (in production, this would call the contract via ethers.js)
-  // To execute live:
-  //   1. Deploy ArbitrageBot.sol with Aave V3 IFlashLoanSimpleReceiver interface
-  //   2. Use ethers.js: const provider = new ethers.JsonRpcProvider(RPC_URLS[network])
-  //   3. const wallet = new ethers.Wallet(config.privateKey, provider)
-  //   4. const pool = new ethers.Contract(AAVE_V3_POOL[network], POOL_ABI, wallet)
-  //   5. const tx = await pool.flashLoanSimple(contractAddress, usdtAddress, amount, calldata, 0)
-  //   6. Handle revert / success
+  // ── Live execution (simulation mode is active; uncomment below to go live) ──
+  //
+  // Prerequisites:
+  //   1. Compile + deploy contracts/ArbitrageBot.sol via contracts/deploy.js
+  //   2. Fill in CONTRACT_ADDRESSES at the top of this file
+  //   3. npm install ethers@6 in api-server
+  //
+  // import { ethers } from "ethers";
+  //
+  // const contractAddress = CONTRACT_ADDRESSES[opp.network];
+  // if (!contractAddress) throw new Error(`No contract deployed on ${opp.network}`);
+  //
+  // const provider = new ethers.JsonRpcProvider(RPC_URLS[opp.network]);
+  // const wallet   = new ethers.Wallet(config.privateKey, provider);
+  //
+  // const LOAN_DECIMALS  = 6; // USDT has 6 decimals
+  // const WBTC_DECIMALS  = 8;
+  // const loanAmountRaw  = ethers.parseUnits(String(FLASH_LOAN_AMOUNT_USDT), LOAN_DECIMALS);
+  // const minProfitRaw   = ethers.parseUnits("0.50", LOAN_DECIMALS); // $0.50 min net profit
+  //
+  // const botAbi = [
+  //   `function initiateArbitrage(tuple(
+  //       uint8 buyDexId, uint8 sellDexId,
+  //       address tokenBorrow, address tokenBuy,
+  //       uint256 loanAmount, uint256 minProfit,
+  //       uint256 deadline, uint8 hops,
+  //       uint8 hopDexId, address hopToken
+  //   ) p) external`,
+  // ];
+  //
+  // const bot = new ethers.Contract(contractAddress, botAbi, wallet);
+  //
+  // // Map opp.buyDex / opp.sellDex names → uint8 IDs registered in deploy.js
+  // const DEX_ID: Record<string, number> = {
+  //   "Trader Joe V2.1": 0, "Pangolin": 1, "SushiSwap": 2, "GMX": 3,   // Avalanche
+  //   "Uniswap V3": 0, "Camelot V3": 2, "Balancer V2": 4,              // Arbitrum
+  //   "Velodrome V2": 1, "Beethoven X": 2, "Curve": 3,                 // Optimism
+  // };
+  //
+  // const tx = await bot.initiateArbitrage({
+  //   buyDexId:    DEX_ID[opp.buyDex]  ?? 0,
+  //   sellDexId:   DEX_ID[opp.sellDex] ?? 0,
+  //   tokenBorrow: USDT_ADDRESSES[opp.network],
+  //   tokenBuy:    WBTC_ADDRESSES[opp.network],
+  //   loanAmount:  loanAmountRaw,
+  //   minProfit:   minProfitRaw,
+  //   deadline:    BigInt(deadline),
+  //   hops:        opp.hops ?? 1,
+  //   hopDexId:    0,
+  //   hopToken:    ethers.ZeroAddress,
+  // }, {
+  //   gasPrice: (await provider.getFeeData()).gasPrice! * 110n / 100n, // +10% bump
+  // });
+  //
+  // const receipt = await tx.wait();
+  // return { txHash: receipt.hash, status: receipt.status === 1 ? "success" : "reverted" };
+  //
+  // ── End live execution block ──────────────────────────────────────────────
 
   logger.info(
     {
