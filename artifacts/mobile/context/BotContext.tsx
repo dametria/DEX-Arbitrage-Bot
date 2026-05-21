@@ -27,7 +27,7 @@ export interface BotConfig {
 const DEFAULT_CONFIG: BotConfig = {
   gasSource: "flashloan",
   networks: ["avalanche", "arbitrum", "optimism"],
-  minProfitPct: 0.2,
+  minProfitPct: 0.15,
   slippageTolerance: 0.01,
   walletAddress: "",
   privateKey: "",

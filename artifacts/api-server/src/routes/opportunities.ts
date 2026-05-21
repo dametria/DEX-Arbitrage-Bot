@@ -14,7 +14,7 @@ router.get("/opportunities", async (req, res) => {
     }
     // If bot isn't running, do a fresh scan for preview purposes
     const prices = await fetchAllPrices();
-    const opps = detectOpportunities(prices, 0.2, ["avalanche", "arbitrum", "optimism"]);
+    const opps = detectOpportunities(prices, 0.15, ["avalanche", "arbitrum", "optimism"]);
     res.json(opps);
   } catch (err) {
     req.log.error({ err }, "Failed to get opportunities");

@@ -27,7 +27,7 @@ router.post("/bot/start", (req, res) => {
     ? body.networks
     : ["avalanche", "arbitrum", "optimism"];
   const minProfitPct =
-    typeof body.minProfitPct === "number" ? body.minProfitPct : 0.2;
+    typeof body.minProfitPct === "number" ? body.minProfitPct : 0.15;
   const slippageTolerance =
     typeof body.slippageTolerance === "number"
       ? body.slippageTolerance
