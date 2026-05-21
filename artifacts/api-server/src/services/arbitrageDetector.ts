@@ -14,7 +14,7 @@ export interface ArbitrageOpportunity {
   status: "pending" | "executing" | "executed" | "failed" | "expired";
 }
 
-const FLASH_LOAN_AMOUNT = 1000;
+const FLASH_LOAN_AMOUNT = 10_000;
 const AAVE_FLASH_FEE_PCT = 0.0005;
 // Realistic price impact for a $1,000 swap against multi-million-dollar DEX liquidity
 // is typically <0.05% per leg. SLIPPAGE_TOLERANCE (1%) is a max safety parameter,

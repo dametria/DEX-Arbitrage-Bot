@@ -271,7 +271,7 @@ export default function SettingsScreen() {
         <View style={styles.infoRow}>
           <Feather name="dollar-sign" size={14} color={colors.mutedForeground} />
           <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-            Flash loan amount: $1,000 USDT
+            Flash loan amount: $10,000 USDT
           </Text>
         </View>
         <View style={styles.infoRow}>

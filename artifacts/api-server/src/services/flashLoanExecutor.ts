@@ -62,7 +62,7 @@ const RPC_URLS: Record<string, string> = {
   optimism: "https://mainnet.optimism.io",
 };
 
-const FLASH_LOAN_AMOUNT_USDT = 1000;
+const FLASH_LOAN_AMOUNT_USDT = 10_000;
 const AAVE_FEE_PCT = 0.0005;
 const DEADLINE_BUFFER_SECONDS = 60;
 
@@ -117,8 +117,7 @@ async function validateOpportunityStillProfitable(
 ): Promise<boolean> {
   // Re-check that the opportunity is still profitable after accounting for
   // current gas costs and slippage
-  const slippageCost =
-    FLASH_LOAN_AMOUNT_USDT * config.slippageTolerance * 0.5;
+  const slippageCost = FLASH_LOAN_AMOUNT_USDT * 0.001; // 0.1% realistic price impact
   const aaveFee = FLASH_LOAN_AMOUNT_USDT * AAVE_FEE_PCT;
   const totalCosts =
     slippageCost +
@@ -316,7 +315,7 @@ export async function executeFlashLoan(
     };
   }
 
-  const slippageCost = FLASH_LOAN_AMOUNT_USDT * config.slippageTolerance * 0.3;
+  const slippageCost = FLASH_LOAN_AMOUNT_USDT * 0.001; // 0.1% realistic price impact
   const aaveFee = FLASH_LOAN_AMOUNT_USDT * AAVE_FEE_PCT;
   const gasCost =
     config.gasSource === "flashloan" ? gasEstimate.gasCostUsd : 0;
