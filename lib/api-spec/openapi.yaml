@@ -3,20 +3,27 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Arbitrage Bot API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: prices
+    description: DEX price operations
+  - name: opportunities
+    description: Arbitrage opportunity operations
+  - name: bot
+    description: Bot control operations
+  - name: trades
+    description: Trade history operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +31,97 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /prices:
+    get:
+      operationId: getPrices
+      tags: [prices]
+      summary: Get WBTC/USDT prices across all DEXs
+      responses:
+        "200":
+          description: Price list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DexPrice"
+
+  /opportunities:
+    get:
+      operationId: getOpportunities
+      tags: [opportunities]
+      summary: Get current arbitrage opportunities
+      responses:
+        "200":
+          description: Opportunity list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArbitrageOpportunity"
+
+  /bot/status:
+    get:
+      operationId: getBotStatus
+      tags: [bot]
+      summary: Get current bot status and stats
+      responses:
+        "200":
+          description: Bot status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotStatus"
+
+  /bot/start:
+    post:
+      operationId: startBot
+      tags: [bot]
+      summary: Start the arbitrage bot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BotConfig"
+      responses:
+        "200":
+          description: Bot started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotStatus"
+
+  /bot/stop:
+    post:
+      operationId: stopBot
+      tags: [bot]
+      summary: Stop the arbitrage bot
+      responses:
+        "200":
+          description: Bot stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotStatus"
+
+  /trades:
+    get:
+      operationId: getTrades
+      tags: [trades]
+      summary: Get trade history
+      responses:
+        "200":
+          description: Trade history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TradeRecord"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +132,184 @@ components:
       required:
         - status
 
+    DexPrice:
+      type: object
+      properties:
+        dex:
+          type: string
+          description: DEX name (e.g. "Trader Joe V2")
+        network:
+          type: string
+          description: Network name (avalanche|arbitrum|optimism)
+        price:
+          type: number
+          description: WBTC/USDT price
+        liquidity:
+          type: number
+          description: USD liquidity in the pool
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - dex
+        - network
+        - price
+        - liquidity
+        - updatedAt
+
+    ArbitrageOpportunity:
+      type: object
+      properties:
+        id:
+          type: string
+        buyDex:
+          type: string
+        sellDex:
+          type: string
+        network:
+          type: string
+        buyPrice:
+          type: number
+        sellPrice:
+          type: number
+        profitPct:
+          type: number
+          description: Profit percentage (e.g. 0.35 for 0.35%)
+        estimatedProfit:
+          type: number
+          description: Estimated profit in USDT after fees
+        hops:
+          type: integer
+          description: Number of jumps in the route
+        detectedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          description: pending|executing|executed|failed|expired
+      required:
+        - id
+        - buyDex
+        - sellDex
+        - network
+        - buyPrice
+        - sellPrice
+        - profitPct
+        - estimatedProfit
+        - hops
+        - detectedAt
+        - status
+
+    BotConfig:
+      type: object
+      properties:
+        gasSource:
+          type: string
+          description: "flashloan|contract - where gas fees come from"
+        networks:
+          type: array
+          items:
+            type: string
+          description: Networks to monitor (avalanche, arbitrum, optimism)
+        minProfitPct:
+          type: number
+          description: Minimum profit percentage to execute (default 0.2)
+        slippageTolerance:
+          type: number
+          description: Slippage tolerance (default 0.01 = 1%)
+        walletAddress:
+          type: string
+          description: Wallet address for flash loan execution
+        privateKey:
+          type: string
+          description: Private key for signing transactions
+      required:
+        - gasSource
+        - networks
+
+    BotStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+        config:
+          $ref: "#/components/schemas/BotConfig"
+        stats:
+          $ref: "#/components/schemas/BotStats"
+        startedAt:
+          type: string
+          format: date-time
+        error:
+          type: string
+      required:
+        - running
+
+    BotStats:
+      type: object
+      properties:
+        totalTrades:
+          type: integer
+        successfulTrades:
+          type: integer
+        failedTrades:
+          type: integer
+        totalProfit:
+          type: number
+        opportunitiesScanned:
+          type: integer
+      required:
+        - totalTrades
+        - successfulTrades
+        - failedTrades
+        - totalProfit
+        - opportunitiesScanned
+
+    TradeRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        buyDex:
+          type: string
+        sellDex:
+          type: string
+        network:
+          type: string
+        buyPrice:
+          type: number
+        sellPrice:
+          type: number
+        loanAmount:
+          type: number
+        profit:
+          type: number
+        profitPct:
+          type: number
+        gasCost:
+          type: number
+        gasSource:
+          type: string
+        txHash:
+          type: string
+        status:
+          type: string
+          description: success|failed|reverted
+        executedAt:
+          type: string
+          format: date-time
+        errorMessage:
+          type: string
+      required:
+        - id
+        - buyDex
+        - sellDex
+        - network
+        - buyPrice
+        - sellPrice
+        - loanAmount
+        - profit
+        - profitPct
+        - gasCost
+        - gasSource
+        - status
+        - executedAt
