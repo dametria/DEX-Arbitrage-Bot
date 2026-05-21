@@ -16,7 +16,10 @@ export interface ArbitrageOpportunity {
 
 const FLASH_LOAN_AMOUNT = 1000;
 const AAVE_FLASH_FEE_PCT = 0.0005;
-const SLIPPAGE_TOLERANCE = 0.01;
+// Realistic price impact for a $1,000 swap against multi-million-dollar DEX liquidity
+// is typically <0.05% per leg. SLIPPAGE_TOLERANCE (1%) is a max safety parameter,
+// not the expected execution cost. We model 0.1% total impact across both legs.
+const EXPECTED_PRICE_IMPACT_PCT = 0.001;
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
@@ -40,7 +43,7 @@ function estimateProfit(
   const wbtcAmount = loanAmount / buyPrice;
   const grossProceeds = wbtcAmount * sellPrice;
   const aaveFee = loanAmount * AAVE_FLASH_FEE_PCT;
-  const slippageCost = loanAmount * SLIPPAGE_TOLERANCE * 0.5;
+  const slippageCost = loanAmount * EXPECTED_PRICE_IMPACT_PCT;
   const gasCost = estimateGasCostUsd(network);
   const net = grossProceeds - loanAmount - aaveFee - slippageCost - gasCost;
   const gross = grossProceeds - loanAmount;
