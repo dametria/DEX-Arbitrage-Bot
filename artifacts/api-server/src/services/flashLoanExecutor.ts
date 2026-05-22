@@ -38,7 +38,7 @@
         this.wallet
       );
 
-      this.executionMode = (process.env.EXECUTION_MODE as 'simulation' | 'live') || 'simulation';
+      this.executionMode = (process.env.EXECUTION_MODE as 'simulation' | 'live') || 'live';
 
       console.log(`🔧 FlashLoanExecutor initialized in ${this.executionMode.toUpperCase()} mode`);
     }
