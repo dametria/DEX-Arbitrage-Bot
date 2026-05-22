@@ -19,6 +19,7 @@ import {
   getGetBotStatusQueryKey,
   useGetOpportunities,
   useWithdrawProfits,
+  useInitDexConfigs,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -38,6 +39,40 @@ export default function DashboardScreen() {
   const [withdrawMsg, setWithdrawMsg] = React.useState<string>("");
 
   const { mutateAsync: withdraw, isPending: isWithdrawing } = useWithdrawProfits();
+
+  const [initStatus, setInitStatus] = React.useState<
+    "idle" | "pending" | "success" | "error"
+  >("idle");
+  const [initMsg, setInitMsg] = React.useState<string>("");
+  const { mutateAsync: initDex, isPending: isIniting } = useInitDexConfigs();
+
+  const handleInitDex = async () => {
+    if (!bot.config.privateKey) {
+      setInitStatus("error");
+      setInitMsg("Enter your private key in Settings first");
+      return;
+    }
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setInitStatus("pending");
+    setInitMsg("");
+    try {
+      const result = await initDex({ data: { privateKey: bot.config.privateKey } });
+      if (result.success) {
+        const parts: string[] = [];
+        if (result.configured.length > 0) parts.push(`Set: ${result.configured.join(", ")}`);
+        if (result.alreadySet.length > 0) parts.push(`Already done: ${result.alreadySet.join(", ")}`);
+        setInitStatus("success");
+        setInitMsg(parts.join(" · ") || "All DEXs configured");
+      } else {
+        setInitStatus("error");
+        setInitMsg(result.failed[0] ?? "Some DEXs failed to configure");
+      }
+    } catch {
+      setInitStatus("error");
+      setInitMsg("Network error — try again");
+    }
+    setTimeout(() => setInitStatus("idle"), 8000);
+  };
 
   const { data: opportunities = [] } = useGetOpportunities({
     query: {
@@ -233,6 +268,80 @@ export default function DashboardScreen() {
                 : colors.destructive
           }
         />
+      </View>
+
+      <View
+        style={[
+          styles.withdrawCard,
+          {
+            backgroundColor: colors.card,
+            borderColor:
+              initStatus === "success" ? colors.accent + "66" :
+              initStatus === "error"   ? colors.destructive + "66" :
+              "#f59e0b66",
+          },
+        ]}
+      >
+        <View style={styles.withdrawLeft}>
+          <Feather
+            name="settings"
+            size={16}
+            color={
+              initStatus === "success" ? colors.accent :
+              initStatus === "error"   ? colors.destructive :
+              "#f59e0b"
+            }
+          />
+          <View>
+            <Text style={[styles.withdrawLabel, { color: colors.foreground }]}>
+              Initialize DEX Adapters
+            </Text>
+            <Text style={[styles.withdrawSub, { color:
+              initStatus === "success" ? colors.accent :
+              initStatus === "error"   ? colors.destructive :
+              "#f59e0b"
+            }]}>
+              {initStatus === "idle"    ? "Required once before first trade" :
+               initStatus === "pending" ? "Registering DEX routers on-chain…" :
+               initStatus === "success" ? `✓ ${initMsg}` :
+               `✗ ${initMsg}`}
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          onPress={handleInitDex}
+          disabled={isIniting || initStatus === "pending"}
+          style={[
+            styles.withdrawBtn,
+            {
+              backgroundColor:
+                initStatus === "success" ? colors.accent + "22" :
+                initStatus === "error"   ? colors.destructive + "22" :
+                "#f59e0b22",
+              borderColor:
+                initStatus === "success" ? colors.accent :
+                initStatus === "error"   ? colors.destructive :
+                "#f59e0b",
+              opacity: isIniting ? 0.6 : 1,
+            },
+          ]}
+          activeOpacity={0.8}
+        >
+          {isIniting ? (
+            <ActivityIndicator size="small" color="#f59e0b" />
+          ) : (
+            <Text style={[styles.withdrawBtnText, {
+              color:
+                initStatus === "success" ? colors.accent :
+                initStatus === "error"   ? colors.destructive :
+                "#f59e0b",
+            }]}>
+              {initStatus === "success" ? "Done" :
+               initStatus === "error"   ? "Retry" :
+               "Initialize"}
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View

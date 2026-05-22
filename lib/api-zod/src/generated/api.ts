@@ -133,6 +133,22 @@ export const StopBotResponse = zod.object({
 
 
 /**
+ * @summary Initialize DEX adapter configs on the deployed contract (one-time setup)
+ */
+export const InitDexConfigsBody = zod.object({
+  "privateKey": zod.string().describe('Owner private key (0x-prefixed)')
+})
+
+export const InitDexConfigsResponse = zod.object({
+  "success": zod.boolean(),
+  "configured": zod.array(zod.string()).describe('DEX names successfully configured in this call'),
+  "alreadySet": zod.array(zod.string()).describe('DEX names that were already configured and skipped'),
+  "failed": zod.array(zod.string()).describe('DEX names that failed with error messages'),
+  "errorMessage": zod.string().optional()
+})
+
+
+/**
  * @summary Withdraw accumulated USDT profits from the deployed contract
  */
 export const WithdrawProfitsBody = zod.object({

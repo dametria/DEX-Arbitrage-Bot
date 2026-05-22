@@ -70,6 +70,22 @@ export interface BotStatus {
   error?: string;
 }
 
+export interface InitDexConfigsRequest {
+  /** Owner private key (0x-prefixed) */
+  privateKey: string;
+}
+
+export interface InitDexConfigsResult {
+  success: boolean;
+  /** DEX names successfully configured in this call */
+  configured: string[];
+  /** DEX names that were already configured and skipped */
+  alreadySet: string[];
+  /** DEX names that failed with error messages */
+  failed: string[];
+  errorMessage?: string;
+}
+
 export interface WithdrawRequest {
   /** Network to withdraw from (arbitrum|avalanche|optimism) */
   network: string;

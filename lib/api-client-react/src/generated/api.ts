@@ -25,6 +25,8 @@ import type {
   BotStatus,
   DexPrice,
   HealthStatus,
+  InitDexConfigsRequest,
+  InitDexConfigsResult,
   TradeRecord,
   WithdrawRequest,
   WithdrawResult
@@ -489,6 +491,77 @@ export const useStopBot = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getStopBotMutationOptions(options));
+    }
+
+export const getInitDexConfigsUrl = () => {
+
+
+
+
+  return `/api/bot/init-dex-configs`
+}
+
+/**
+ * @summary Initialize DEX adapter configs on the deployed contract (one-time setup)
+ */
+export const initDexConfigs = async (initDexConfigsRequest: InitDexConfigsRequest, options?: RequestInit): Promise<InitDexConfigsResult> => {
+
+  return customFetch<InitDexConfigsResult>(getInitDexConfigsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      initDexConfigsRequest,)
+  }
+);}
+
+
+
+
+export const getInitDexConfigsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initDexConfigs>>, TError,{data: BodyType<InitDexConfigsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof initDexConfigs>>, TError,{data: BodyType<InitDexConfigsRequest>}, TContext> => {
+
+const mutationKey = ['initDexConfigs'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof initDexConfigs>>, {data: BodyType<InitDexConfigsRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  initDexConfigs(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InitDexConfigsMutationResult = NonNullable<Awaited<ReturnType<typeof initDexConfigs>>>
+    export type InitDexConfigsMutationBody = BodyType<InitDexConfigsRequest>
+    export type InitDexConfigsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Initialize DEX adapter configs on the deployed contract (one-time setup)
+ */
+export const useInitDexConfigs = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initDexConfigs>>, TError,{data: BodyType<InitDexConfigsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof initDexConfigs>>,
+        TError,
+        {data: BodyType<InitDexConfigsRequest>},
+        TContext
+      > => {
+      return useMutation(getInitDexConfigsMutationOptions(options));
     }
 
 export const getWithdrawProfitsUrl = () => {

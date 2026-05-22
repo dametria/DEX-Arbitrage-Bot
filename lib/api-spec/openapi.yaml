@@ -107,6 +107,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/BotStatus"
 
+  /bot/init-dex-configs:
+    post:
+      operationId: initDexConfigs
+      tags: [bot]
+      summary: Initialize DEX adapter configs on the deployed contract (one-time setup)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InitDexConfigsRequest"
+      responses:
+        "200":
+          description: Initialization result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InitDexConfigsResult"
+
   /bot/withdraw:
     post:
       operationId: withdrawProfits
@@ -282,6 +301,43 @@ components:
         - failedTrades
         - totalProfit
         - opportunitiesScanned
+
+    InitDexConfigsRequest:
+      type: object
+      properties:
+        privateKey:
+          type: string
+          description: Owner private key (0x-prefixed)
+      required:
+        - privateKey
+
+    InitDexConfigsResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        configured:
+          type: array
+          items:
+            type: string
+          description: DEX names successfully configured in this call
+        alreadySet:
+          type: array
+          items:
+            type: string
+          description: DEX names that were already configured and skipped
+        failed:
+          type: array
+          items:
+            type: string
+          description: DEX names that failed with error messages
+        errorMessage:
+          type: string
+      required:
+        - success
+        - configured
+        - alreadySet
+        - failed
 
     WithdrawRequest:
       type: object
