@@ -227,56 +227,74 @@ export async function executeFlashLoan(
   //   2. Fill in CONTRACT_ADDRESSES at the top of this file
   //   3. npm install ethers@6 in api-server
   //
-  //import { ethers } from "ethers";
-  
-   const contractAddress = CONTRACT_ADDRESSES[opp.network];
-   if (!contractAddress) throw new Error(`No contract deployed on ${opp.network}`);
-  
-   const provider = new ethers.JsonRpcProvider(RPC_URLS[opp.network]);
-   const wallet   = new ethers.Wallet(config.privateKey, provider);
-  
-   const LOAN_DECIMALS  = 6; // USDT has 6 decimals
-   const WBTC_DECIMALS  = 8;
-   const loanAmountRaw  = ethers.parseUnits(String(FLASH_LOAN_AMOUNT_USDT), LOAN_DECIMALS);
-   const minProfitRaw   = ethers.parseUnits("0.50", LOAN_DECIMALS); // $0.50 min net profit
-  
-   const botAbi = [
-     `function initiateArbitrage(tuple(
-         uint8 buyDexId, uint8 sellDexId,
-         address tokenBorrow, address tokenBuy,
-         uint256 loanAmount, uint256 minProfit,
-         uint256 deadline, uint8 hops,
-         uint8 hopDexId, address hopToken
-     ) p) external`,
-   ];
-  
-   const bot = new ethers.Contract(contractAddress, botAbi, wallet);
-  
-   // Map opp.buyDex / opp.sellDex names → uint8 IDs registered in deploy.js
-   const DEX_ID: Record<string, number> = {
-     "Trader Joe V2.1": 0, "Pangolin": 1, "SushiSwap": 2, "GMX": 3,   // Avalanche
-     "Uniswap V3": 0, "Camelot V3": 2, "Balancer V2": 4,             //  Arbitrum
-     "Velodrome V2": 1, "Beethoven X": 2, "Curve": 3,                //  Optimism
-   };
-  
-   const tx = await bot.initiateArbitrage({
-     buyDexId:    DEX_ID[opp.buyDex]  ?? 0,
-     sellDexId:   DEX_ID[opp.sellDex] ?? 0,
-     tokenBorrow: USDT_ADDRESSES[opp.network],
-     tokenBuy:    WBTC_ADDRESSES[opp.network],
-     loanAmount:  loanAmountRaw,
-     minProfit:   minProfitRaw,
-     deadline:    BigInt(deadline),
-     hops:        opp.hops ?? 1,
-     hopDexId:    0,
-     hopToken:    ethers.ZeroAddress,
-   }, {
-     gasPrice: (await provider.getFeeData()).gasPrice! * 110n / 100n,  +10% bump
-   });
-  
-   const receipt = await tx.wait();
-   return { txHash: receipt.hash, status: receipt.status === 1 ? "success" : "reverted" };
-  
+  // import { ethers } from "ethers";
+  //
+  // const contractAddress = CONTRACT_ADDRESSES[opp.network];
+  // if (!contractAddress) throw new Error(`No contract deployed on ${opp.network}`);
+  //
+  // const provider = new ethers.JsonRpcProvider(RPC_URLS[opp.network]);
+  // const wallet   = new ethers.Wallet(config.privateKey, provider);
+  //
+  // const LOAN_DECIMALS  = 6; // USDT has 6 decimals
+  // const WBTC_DECIMALS  = 8;
+  // const loanAmountRaw  = ethers.parseUnits(String(FLASH_LOAN_AMOUNT_USDT), LOAN_DECIMALS);
+  // const minProfitRaw   = ethers.parseUnits("0.50", LOAN_DECIMALS); // $0.50 min net profit
+  //
+  // const botAbi = [
+  //   `function initiateArbitrage(tuple(
+  //       uint8 buyDexId, uint8 sellDexId,
+  //       address tokenBorrow, address tokenBuy,
+  //       uint256 loanAmount, uint256 minProfit,
+  //       uint256 deadline, uint8 hops,
+  //       uint8 hopDexId, address hopToken
+  //   ) p) external`,
+  // ];
+  //
+  // const bot = new ethers.Contract(contractAddress, botAbi, wallet);
+  //
+  // // Map opp.buyDex / opp.sellDex names → uint8 IDs registered in deploy.js
+  // const DEX_ID: Record<string, number> = {
+  //   "Trader Joe V2.1": 0, "Pangolin": 1, "SushiSwap": 2, "GMX": 3,   // Avalanche
+  //   "Uniswap V3": 0, "Camelot V3": 2, "Balancer V2": 4,              // Arbitrum
+  //   "Velodrome V2": 1, "Beethoven X": 2, "Curve": 3,                 // Optimism
+  // };
+  //
+  // const tx = await bot.initiateArbitrage({
+  //   buyDexId:    DEX_ID[opp.buyDex]  ?? 0,
+  //   sellDexId:   DEX_ID[opp.sellDex] ?? 0,
+  //   tokenBorrow: USDT_ADDRESSES[opp.network],
+  //   tokenBuy:    WBTC_ADDRESSES[opp.network],
+  //   loanAmount:  loanAmountRaw,
+  //   minProfit:   minProfitRaw,
+  //   deadline:    BigInt(deadline),
+  //   hops:        opp.hops ?? 1,
+  //   hopDexId:    0,
+  //   hopToken:    ethers.ZeroAddress,
+  // }, {
+  //   gasPrice: (await provider.getFeeData()).gasPrice! * 110n / 100n, // +10% bump
+  // });
+  //
+  // const receipt = await tx.wait();
+  // return {
+  //   id: generateId(),
+  //   buyDex: opp.buyDex,
+  //   sellDex: opp.sellDex,
+  //   network: opp.network,
+  //   buyPrice: opp.buyPrice,
+  //   sellPrice: opp.sellPrice,
+  //   loanAmount: FLASH_LOAN_AMOUNT_USDT,
+  //   profit: receipt.status === 1 ? parseFloat(opp.estimatedProfit.toFixed(4)) : 0,
+  //   profitPct: receipt.status === 1
+  //     ? parseFloat(((opp.estimatedProfit / FLASH_LOAN_AMOUNT_USDT) * 100).toFixed(4))
+  //     : 0,
+  //   gasCost: parseFloat(gasEstimate.gasCostUsd.toFixed(4)),
+  //   gasSource: config.gasSource,
+  //   txHash: receipt.hash,
+  //   status: receipt.status === 1 ? "success" : "reverted",
+  //   executedAt,
+  //   errorMessage: receipt.status === 1 ? undefined : "Transaction reverted on-chain",
+  // };
+  //
   // ── End live execution block ──────────────────────────────────────────────
 
   logger.info(
