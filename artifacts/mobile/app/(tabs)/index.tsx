@@ -18,6 +18,7 @@ import {
   getGetOpportunitiesQueryKey,
   getGetBotStatusQueryKey,
   useGetOpportunities,
+  useWithdrawProfits,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -31,6 +32,12 @@ export default function DashboardScreen() {
   const bot = useBotContext();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [withdrawStatus, setWithdrawStatus] = React.useState<
+    "idle" | "pending" | "success" | "error"
+  >("idle");
+  const [withdrawMsg, setWithdrawMsg] = React.useState<string>("");
+
+  const { mutateAsync: withdraw, isPending: isWithdrawing } = useWithdrawProfits();
 
   const { data: opportunities = [] } = useGetOpportunities({
     query: {
@@ -49,6 +56,37 @@ export default function DashboardScreen() {
     await queryClient.invalidateQueries({ queryKey: getGetOpportunitiesQueryKey() });
     setRefreshing(false);
   }, [queryClient]);
+
+  const handleWithdraw = async () => {
+    if (!bot.config.privateKey || !bot.config.walletAddress) {
+      setWithdrawStatus("error");
+      setWithdrawMsg("Set wallet address and private key in Settings first");
+      return;
+    }
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setWithdrawStatus("pending");
+    setWithdrawMsg("");
+    try {
+      const result = await withdraw({
+        data: {
+          network: bot.config.networks[0] ?? "arbitrum",
+          privateKey: bot.config.privateKey,
+          toAddress: bot.config.walletAddress,
+        },
+      });
+      if (result.status === "success") {
+        setWithdrawStatus("success");
+        setWithdrawMsg(`Sent to ${result.toAddress.slice(0, 6)}...${result.toAddress.slice(-4)}`);
+      } else {
+        setWithdrawStatus("error");
+        setWithdrawMsg(result.errorMessage ?? "Withdrawal failed");
+      }
+    } catch {
+      setWithdrawStatus("error");
+      setWithdrawMsg("Network error — try again");
+    }
+    setTimeout(() => setWithdrawStatus("idle"), 6000);
+  };
 
   const handleBotToggle = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -195,6 +233,80 @@ export default function DashboardScreen() {
                 : colors.destructive
           }
         />
+      </View>
+
+      <View
+        style={[
+          styles.withdrawCard,
+          {
+            backgroundColor: colors.card,
+            borderColor:
+              withdrawStatus === "success" ? colors.accent + "66" :
+              withdrawStatus === "error"   ? colors.destructive + "66" :
+              colors.border,
+          },
+        ]}
+      >
+        <View style={styles.withdrawLeft}>
+          <Feather
+            name="download"
+            size={16}
+            color={
+              withdrawStatus === "success" ? colors.accent :
+              withdrawStatus === "error"   ? colors.destructive :
+              colors.primary
+            }
+          />
+          <View>
+            <Text style={[styles.withdrawLabel, { color: colors.foreground }]}>
+              Withdraw Profits
+            </Text>
+            <Text style={[styles.withdrawSub, { color:
+              withdrawStatus === "success" ? colors.accent :
+              withdrawStatus === "error"   ? colors.destructive :
+              colors.mutedForeground
+            }]}>
+              {withdrawStatus === "idle"    ? `Contract: 0x818D...500C on ${bot.config.networks[0] ?? "arbitrum"}` :
+               withdrawStatus === "pending" ? "Sending transaction…" :
+               withdrawStatus === "success" ? `✓ ${withdrawMsg}` :
+               `✗ ${withdrawMsg}`}
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          onPress={handleWithdraw}
+          disabled={isWithdrawing || withdrawStatus === "pending"}
+          style={[
+            styles.withdrawBtn,
+            {
+              backgroundColor:
+                withdrawStatus === "success" ? colors.accent + "22" :
+                withdrawStatus === "error"   ? colors.destructive + "22" :
+                colors.primary + "22",
+              borderColor:
+                withdrawStatus === "success" ? colors.accent :
+                withdrawStatus === "error"   ? colors.destructive :
+                colors.primary,
+              opacity: isWithdrawing ? 0.6 : 1,
+            },
+          ]}
+          activeOpacity={0.8}
+        >
+          {isWithdrawing ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Text style={[styles.withdrawBtnText, {
+              color:
+                withdrawStatus === "success" ? colors.accent :
+                withdrawStatus === "error"   ? colors.destructive :
+                colors.primary,
+            }]}>
+              {withdrawStatus === "success" ? "Done" :
+               withdrawStatus === "error"   ? "Retry" :
+               "Withdraw"}
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.configRow}>
@@ -400,5 +512,40 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 14,
     textAlign: "center",
+  },
+  withdrawCard: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  withdrawLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  withdrawLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+  },
+  withdrawSub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  withdrawBtn: {
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  withdrawBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
   },
 });

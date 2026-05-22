@@ -4,6 +4,7 @@ import {
   stopBot,
   getBotStatus,
 } from "../services/botEngine.js";
+import { withdrawFromContract } from "../services/contractWithdraw.js";
 
 const router = Router();
 
@@ -52,6 +53,33 @@ router.post("/bot/stop", (req, res) => {
   stopBot();
   req.log.info("Bot stop requested");
   res.json(getBotStatus());
+});
+
+router.post("/bot/withdraw", async (req, res) => {
+  const body = req.body as {
+    network?: string;
+    privateKey?: string;
+    toAddress?: string;
+  };
+
+  const network    = typeof body.network    === "string" ? body.network    : "arbitrum";
+  const privateKey = typeof body.privateKey === "string" ? body.privateKey : "";
+  const toAddress  = typeof body.toAddress  === "string" ? body.toAddress  : "";
+
+  if (!privateKey || !toAddress) {
+    res.status(400).json({ error: "privateKey and toAddress are required" });
+    return;
+  }
+
+  req.log.info({ network, toAddress }, "Withdraw requested");
+
+  try {
+    const result = await withdrawFromContract(network, privateKey, toAddress);
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Withdraw failed");
+    res.status(500).json({ error: "Withdraw failed" });
+  }
 });
 
 export default router;
