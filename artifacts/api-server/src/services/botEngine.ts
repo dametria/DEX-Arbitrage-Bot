@@ -72,7 +72,15 @@ async function scanAndExecute(): Promise<void> {
     const pending = opportunities.filter((o) => o.status === "pending");
     if (pending.length === 0) return;
 
-    const best = pending[0];
+    // Only execute on networks where a contract is deployed
+    const DEPLOYED_NETWORKS = new Set(["arbitrum"]);
+    const executable = pending.filter((o) => DEPLOYED_NETWORKS.has(o.network));
+    if (executable.length === 0) {
+      logger.debug("Opportunities found but none on a network with a deployed contract");
+      return;
+    }
+
+    const best = executable[0];
     if (!best) return;
 
     if (activeExecutions >= MAX_CONCURRENT_EXECUTIONS) {
