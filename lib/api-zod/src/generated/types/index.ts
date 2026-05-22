@@ -13,3 +13,5 @@ export * from './botStatus';
 export * from './dexPrice';
 export * from './healthStatus';
 export * from './tradeRecord';
+export * from './withdrawRequest';
+export * from './withdrawResult';

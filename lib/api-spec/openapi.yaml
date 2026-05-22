@@ -107,6 +107,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/BotStatus"
 
+  /bot/withdraw:
+    post:
+      operationId: withdrawProfits
+      tags: [bot]
+      summary: Withdraw accumulated USDT profits from the deployed contract
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawRequest"
+      responses:
+        "200":
+          description: Withdrawal result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WithdrawResult"
+
   /trades:
     get:
       operationId: getTrades
@@ -263,6 +282,45 @@ components:
         - failedTrades
         - totalProfit
         - opportunitiesScanned
+
+    WithdrawRequest:
+      type: object
+      properties:
+        network:
+          type: string
+          description: Network to withdraw from (arbitrum|avalanche|optimism)
+        privateKey:
+          type: string
+          description: Owner private key (0x-prefixed)
+        toAddress:
+          type: string
+          description: Wallet address to send USDT to
+      required:
+        - network
+        - privateKey
+        - toAddress
+
+    WithdrawResult:
+      type: object
+      properties:
+        txHash:
+          type: string
+        network:
+          type: string
+        contractAddress:
+          type: string
+        toAddress:
+          type: string
+        status:
+          type: string
+          description: success|failed
+        errorMessage:
+          type: string
+      required:
+        - network
+        - contractAddress
+        - toAddress
+        - status
 
     TradeRecord:
       type: object

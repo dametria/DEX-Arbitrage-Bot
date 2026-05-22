@@ -70,6 +70,25 @@ export interface BotStatus {
   error?: string;
 }
 
+export interface WithdrawRequest {
+  /** Network to withdraw from (arbitrum|avalanche|optimism) */
+  network: string;
+  /** Owner private key (0x-prefixed) */
+  privateKey: string;
+  /** Wallet address to send USDT to */
+  toAddress: string;
+}
+
+export interface WithdrawResult {
+  txHash?: string;
+  network: string;
+  contractAddress: string;
+  toAddress: string;
+  /** success|failed */
+  status: string;
+  errorMessage?: string;
+}
+
 export interface TradeRecord {
   id: string;
   buyDex: string;

@@ -133,6 +133,25 @@ export const StopBotResponse = zod.object({
 
 
 /**
+ * @summary Withdraw accumulated USDT profits from the deployed contract
+ */
+export const WithdrawProfitsBody = zod.object({
+  "network": zod.string().describe('Network to withdraw from (arbitrum|avalanche|optimism)'),
+  "privateKey": zod.string().describe('Owner private key (0x-prefixed)'),
+  "toAddress": zod.string().describe('Wallet address to send USDT to')
+})
+
+export const WithdrawProfitsResponse = zod.object({
+  "txHash": zod.string().optional(),
+  "network": zod.string(),
+  "contractAddress": zod.string(),
+  "toAddress": zod.string(),
+  "status": zod.string().describe('success|failed'),
+  "errorMessage": zod.string().optional()
+})
+
+
+/**
  * @summary Get trade history
  */
 export const GetTradesResponseItem = zod.object({

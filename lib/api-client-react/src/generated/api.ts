@@ -25,7 +25,9 @@ import type {
   BotStatus,
   DexPrice,
   HealthStatus,
-  TradeRecord
+  TradeRecord,
+  WithdrawRequest,
+  WithdrawResult
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -487,6 +489,77 @@ export const useStopBot = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getStopBotMutationOptions(options));
+    }
+
+export const getWithdrawProfitsUrl = () => {
+
+
+
+
+  return `/api/bot/withdraw`
+}
+
+/**
+ * @summary Withdraw accumulated USDT profits from the deployed contract
+ */
+export const withdrawProfits = async (withdrawRequest: WithdrawRequest, options?: RequestInit): Promise<WithdrawResult> => {
+
+  return customFetch<WithdrawResult>(getWithdrawProfitsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      withdrawRequest,)
+  }
+);}
+
+
+
+
+export const getWithdrawProfitsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdrawProfits>>, TError,{data: BodyType<WithdrawRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof withdrawProfits>>, TError,{data: BodyType<WithdrawRequest>}, TContext> => {
+
+const mutationKey = ['withdrawProfits'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof withdrawProfits>>, {data: BodyType<WithdrawRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  withdrawProfits(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type WithdrawProfitsMutationResult = NonNullable<Awaited<ReturnType<typeof withdrawProfits>>>
+    export type WithdrawProfitsMutationBody = BodyType<WithdrawRequest>
+    export type WithdrawProfitsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Withdraw accumulated USDT profits from the deployed contract
+ */
+export const useWithdrawProfits = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdrawProfits>>, TError,{data: BodyType<WithdrawRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof withdrawProfits>>,
+        TError,
+        {data: BodyType<WithdrawRequest>},
+        TContext
+      > => {
+      return useMutation(getWithdrawProfitsMutationOptions(options));
     }
 
 export const getGetTradesUrl = () => {
