@@ -1,157 +1,75 @@
-  import { ethers } from 'ethers';
-  import { ExecutionOpportunity, ExecutionConfig, ExecutionResult } from '../types';
-  import dotenv from 'dotenv';
+import { ethers } from "ethers";
+import { logger } from "../lib/logger.js";
+import type { ArbitrageOpportunity } from "./arbitrageDetector.js";
 
-  dotenv.config();
+export interface ExecutionConfig {
+  gasSource: "flashloan" | "contract";
+  slippageTolerance: number;
+  walletAddress: string;
+  privateKey: string;
+}
 
-  const DEADLINE_BUFFER_SECONDS = 120; // Increased for safety
+export interface TradeRecord {
+  id: string;
+  buyDex: string;
+  sellDex: string;
+  network: string;
+  buyPrice: number;
+  sellPrice: number;
+  loanAmount: number;
+  profit: number;
+  profitPct: number;
+  gasCost: number;
+  gasSource: string;
+  txHash: string | undefined;
+  status: "success" | "reverted" | "failed";
+  executedAt: string;
+  errorMessage?: string;
+}
 
-  // Contract ABIs (minimal relevant parts)
-  const FLASH_LOAN_ABI = [
-    "function executeArbitrage(address[] calldata path, uint256 amount, uint256 minProfit, uint256 deadline) external returns (bool)",
-    "function getDexRouter(string calldata dexName) external view returns (address)",
-    "function setDexConfig(string calldata name, address router, uint256 fee) external",
-  ];
-
-  export class FlashLoanExecutor {
-    private provider: ethers.JsonRpcProvider;
-    private wallet: ethers.Wallet;
-    private flashLoanContract: ethers.Contract;
-    private executionMode: 'simulation' | 'live';
-
-    constructor() {
-      this.provider = new ethers.JsonRpcProvider(
-        process.env.ARBITRUM_RPC || 'https://arb1.arbitrum.io/rpc'
-      );
-
-      this.wallet = new ethers.Wallet(
-        process.env.PRIVATE_KEY!,
-        this.provider
-      );
-
-      // ←←← UPDATE THIS WITH YOUR DEPLOYED CONTRACT ADDRESS ←←←
-      const CONTRACT_ADDRESS = process.env.FLASH_LOAN_CONTRACT || "0xYourDeployedContractAddressHere";
-
-      this.flashLoanContract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        FLASH_LOAN_ABI,
-        this.wallet
-      );
-
-      this.executionMode = (process.env.EXECUTION_MODE as 'simulation' | 'live') || 'live';
-
-      console.log(`🔧 FlashLoanExecutor initialized in ${this.executionMode.toUpperCase()} mode`);
-    }
-
-    public async execute(opportunity: ExecutionOpportunity, config: ExecutionConfig): Promise<ExecutionResult> {
-      const deadline = Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_SECONDS;
-
-      console.log(`📈 Executing opportunity: ${opportunity.tokenIn} → ${opportunity.tokenOut} | Expected profit: ${opportunity.expectedProfit}`);
-
-      try {
-        if (this.executionMode === 'live') {
-          return await this.executeLive(opportunity, deadline, config);
-        } else {
-          return await this.executeSimulation(opportunity);
-        }
-      } catch (error: any) {
-        console.error("❌ Execution failed:", error.message);
-        return {
-          success: false,
-          profit: 0,
-          error: error.message,
-          txHash: null
-        };
-      }
-    }
-
-    private async executeLive(
-      opportunity: ExecutionOpportunity,
-      deadline: number,
-      config: ExecutionConfig
-    ): Promise<ExecutionResult> {
-      console.log(`🚀 SENDING LIVE TRANSACTION on Arbitrum...`);
-
-      const tx = await this.flashLoanContract.executeArbitrage(
-        opportunity.path,
-        opportunity.amount,
-        opportunity.minProfit || ethers.parseUnits("0.5", 6), // 0.5 USDC minimum example
-        deadline,
-        {
-          gasLimit: 1_200_000,           // Generous gas limit for multi-hop
-          maxFeePerGas: ethers.parseUnits("0.5", "gwei"),
-          maxPriorityFeePerGas: ethers.parseUnits("0.1", "gwei"),
-        }
-      );
-
-      console.log(`📤 Transaction sent: ${tx.hash}`);
-
-      const receipt = await tx.wait(1); // Wait for 1 confirmation
-
-      const profit = this.calculateRealProfit(receipt); // Implement based on logs if needed
-
-      return {
-        success: true,
-        profit: Number(ethers.formatUnits(profit || 0, 6)),
-        txHash: tx.hash,
-        blockNumber: receipt.blockNumber
-      };
-    }
-
-    private async executeSimulation(opportunity: ExecutionOpportunity): Promise<ExecutionResult> {
-      console.log(`🧪 SIMULATION MODE - Opportunity would be executed`);
-
-      // More realistic simulation
-      const success = Math.random() > 0.08; // \~92% success rate in sim
-
-      return {
-        success,
-        profit: success ? Number(opportunity.expectedProfit) * 0.92 : 0,
-        txHash: `0xSIM_${Date.now()}`,
-        error: success ? undefined : "Simulated failure"
-      };
-    }
-
-    private calculateRealProfit(receipt: any): bigint {
-      // TODO: Parse Transfer events or custom Profit event from contract
-      // For now return a placeholder
-      return BigInt(0);
-    }
-
-    // Helper to verify routing on-chain
-    public async verifyRouting(path: string[]): Promise<boolean> {
-      try {
-        // You can add on-chain checks here if your contract exposes them
-        console.log(`✅ Routing verified for path: ${path.join(' → ')}`);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-  }
-
-  // Export singleton
-  export const flashLoanExecutor = new FlashLoanExecutor();  // Avalanche (deployed IDs 0-3)
-  "Trader Joe V2.1": 0,
-  "Pangolin":        1,
-  "SushiSwap":       2,
-  "GMX":             3,
-  // Arbitrum (deployed IDs 0-4)
-  "Uniswap V3":  0,
-  // SushiSwap already 2 for Avalanche; on Arbitrum it's also ID 1
-  "Camelot V3":  2,
-  "Balancer V2": 4,
-  // Optimism (deployed IDs 0-3)
-  "Velodrome V2": 1,
-  "Beethoven X":  2,
-  "Curve":        3,
+const CONTRACT_ADDRESSES: Record<string, string> = {
+  arbitrum: "0x88379b60dAbaC8759d2577E52f0aB74D731724F9",
+  avalanche: undefined,
+  optimism: undefined,
 };
 
-// Per-network SushiSwap DEX ID (different on Avalanche vs Arbitrum)
+const USDT_ADDRESSES: Record<string, string> = {
+  avalanche: "0x9702230A8Ea53655438EE1C719456B2Bbf26Ad3D",
+  arbitrum: "0xFd086bC7CD5C481DCC9C85fE04213A929da48929",
+  optimism: "0x94b008aA00579c1307B0EF2C499aD98BE8348085",
+};
+
+const WBTC_ADDRESSES: Record<string, string> = {
+  avalanche: "0x50b674Da3E581653D9b603a7c1AF7458f5e7CD50",
+  arbitrum: "0x2f2a2543B76A4166567F48F5b3b2F4F6627F35D9",
+  optimism: "0x68f180fcCe68366896E3649Fb2824D77550884eA",
+};
+
+const RPC_URLS: Record<string, string> = {
+  avalanche: "https://api.avax.network/ext/bc/C/rpc",
+  arbitrum: "https://arb1.arbitrum.io/rpc",
+  optimism: "https://mainnet.optimism.io",
+};
+
+const DEX_ID: Record<string, number> = {
+  // Avalanche
+  "Trader Joe V2.1": 0,
+  "Pangolin": 1,
+  "SushiSwap": 2,
+  // Arbitrum
+  "PancakeSwap V3": 0,
+  "Uniswap V3": 1,
+  "SushiSwap": 2,
+  "Camelot V3": 3,
+  // Optimism
+  "Uniswap V3": 0,
+  "Velodrome V2": 1,
+};
+
 const SUSHISWAP_ID: Record<string, number> = {
   avalanche: 2,
-  arbitrum:  1,
-  optimism:  2,
+  arbitrum: 2,
+  optimism: 2,
 };
 
 const BOT_ABI = [
@@ -170,43 +88,37 @@ const BOT_ABI = [
 ];
 
 const FLASH_LOAN_AMOUNT_USDT = 10_000;
-const AAVE_FEE_PCT            = 0.0005;
-const DEADLINE_BUFFER_SECONDS = 60;
-const LOAN_DECIMALS           = 6; // USDT has 6 decimals
-const MIN_PROFIT_USD          = "0.50"; // $0.50 minimum net profit enforced on-chain
+const AAVE_FEE_PCT = 0.0005;
+const DEADLINE_BUFFER_SECONDS = 120;
+const LOAN_DECIMALS = 6;
+const MIN_PROFIT_USD = "0.50";
+
+const NATIVE_TOKEN_PRICES: Record<string, number> = {
+  avalanche: 35,
+  arbitrum: 3200,
+  optimism: 3200,
+};
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 }
 
-interface GasEstimate {
-  gasPriceGwei: number;
-  estimatedGasUnits: number;
-  gasCostUsd: number;
-}
-
-const NATIVE_TOKEN_PRICES: Record<string, number> = {
-  avalanche: 35,
-  arbitrum:  2400,
-  optimism:  2400,
-};
-
-function estimateGas(network: string): GasEstimate {
+function estimateGas(network: string): { gasPriceGwei: number; estimatedGasUnits: number; gasCostUsd: number } {
   const gasPricesGwei: Record<string, number> = {
     avalanche: 30,
-    arbitrum:  0.1,
-    optimism:  0.001,
+    arbitrum: 0.1,
+    optimism: 0.001,
   };
   const gasUnits: Record<string, number> = {
     avalanche: 400_000,
-    arbitrum:  800_000,
-    optimism:  600_000,
+    arbitrum: 800_000,
+    optimism: 600_000,
   };
-  const gasPriceGwei     = gasPricesGwei[network] ?? 1;
+  const gasPriceGwei = gasPricesGwei[network] ?? 1;
   const estimatedGasUnits = gasUnits[network] ?? 500_000;
-  const nativePrice      = NATIVE_TOKEN_PRICES[network] ?? 1;
-  const gasCostNative    = (gasPriceGwei * estimatedGasUnits) / 1e9;
-  const gasCostUsd       = gasCostNative * nativePrice;
+  const nativePrice = NATIVE_TOKEN_PRICES[network] ?? 1;
+  const gasCostNative = (gasPriceGwei * estimatedGasUnits) / 1e9;
+  const gasCostUsd = gasCostNative * nativePrice;
   return { gasPriceGwei, estimatedGasUnits, gasCostUsd };
 }
 
@@ -219,66 +131,86 @@ export async function executeFlashLoan(
   opp: ArbitrageOpportunity,
   config: ExecutionConfig,
 ): Promise<TradeRecord> {
-  const executedAt  = new Date().toISOString();
+  const executedAt = new Date().toISOString();
   const gasEstimate = estimateGas(opp.network);
 
   logger.info(
     { opp: opp.id, network: opp.network, buyDex: opp.buyDex, sellDex: opp.sellDex },
-    "Executing flash loan arbitrage (live)",
+    "Executing flash loan arbitrage",
   );
 
-  const deadline        = Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_SECONDS;
+  const deadline = Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_SECONDS;
   const contractAddress = CONTRACT_ADDRESSES[opp.network];
-  const usdtAddress     = USDT_ADDRESSES[opp.network];
-  const wbtcAddress     = WBTC_ADDRESSES[opp.network];
+  const usdtAddress = USDT_ADDRESSES[opp.network];
+  const wbtcAddress = WBTC_ADDRESSES[opp.network];
 
-  // Guard: network must have a deployed contract
   if (!contractAddress) {
     return {
       id: generateId(),
-      buyDex: opp.buyDex, sellDex: opp.sellDex,
+      buyDex: opp.buyDex,
+      sellDex: opp.sellDex,
       network: opp.network,
-      buyPrice: opp.buyPrice, sellPrice: opp.sellPrice,
+      buyPrice: opp.buyPrice,
+      sellPrice: opp.sellPrice,
       loanAmount: FLASH_LOAN_AMOUNT_USDT,
-      profit: 0, profitPct: 0,
-      gasCost: 0, gasSource: config.gasSource,
-      txHash: undefined, status: "failed", executedAt,
-      errorMessage: `No contract deployed on ${opp.network} — add address to CONTRACT_ADDRESSES`,
+      profit: 0,
+      profitPct: 0,
+      gasCost: 0,
+      gasSource: config.gasSource,
+      txHash: undefined,
+      status: "failed",
+      executedAt,
+      errorMessage: `No contract deployed on ${opp.network}`,
     };
   }
 
-  // Guard: private key required
   if (!config.privateKey) {
     return {
       id: generateId(),
-      buyDex: opp.buyDex, sellDex: opp.sellDex,
+      buyDex: opp.buyDex,
+      sellDex: opp.sellDex,
       network: opp.network,
-      buyPrice: opp.buyPrice, sellPrice: opp.sellPrice,
+      buyPrice: opp.buyPrice,
+      sellPrice: opp.sellPrice,
       loanAmount: FLASH_LOAN_AMOUNT_USDT,
-      profit: 0, profitPct: 0,
-      gasCost: 0, gasSource: config.gasSource,
-      txHash: undefined, status: "failed", executedAt,
-      errorMessage: "No private key configured — set it in Settings",
+      profit: 0,
+      profitPct: 0,
+      gasCost: 0,
+      gasSource: config.gasSource,
+      txHash: undefined,
+      status: "failed",
+      executedAt,
+      errorMessage: "No private key configured",
     };
   }
 
   try {
     const provider = new ethers.JsonRpcProvider(RPC_URLS[opp.network]);
-    const wallet   = new ethers.Wallet(config.privateKey, provider);
-    const bot      = new ethers.Contract(contractAddress, BOT_ABI, wallet);
+    const wallet = new ethers.Wallet(config.privateKey, provider);
+    const bot = new ethers.Contract(contractAddress, BOT_ABI, wallet);
 
     const loanAmountRaw = ethers.parseUnits(String(FLASH_LOAN_AMOUNT_USDT), LOAN_DECIMALS);
-    const minProfitRaw  = ethers.parseUnits(MIN_PROFIT_USD, LOAN_DECIMALS);
+    const minProfitRaw = ethers.parseUnits(MIN_PROFIT_USD, LOAN_DECIMALS);
 
-    const feeData    = await provider.getFeeData();
-    const gasPrice   = feeData.gasPrice != null
-      ? feeData.gasPrice * 110n / 100n  // +10% bump to beat competing txs
-      : undefined;
+    const feeData = await provider.getFeeData();
+    const maxFeePerGas = feeData.maxFeePerGas ? feeData.maxFeePerGas * 12n / 10n : undefined;
+    const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ? feeData.maxPriorityFeePerGas * 11n / 10n : undefined;
+
+    const txOptions: Record<string, unknown> = {
+      gasLimit: 1_200_000,
+    };
+    if (maxFeePerGas && maxPriorityFeePerGas) {
+      txOptions.maxFeePerGas = maxFeePerGas;
+      txOptions.maxPriorityFeePerGas = maxPriorityFeePerGas;
+    } else if (feeData.gasPrice) {
+      txOptions.gasPrice = feeData.gasPrice * 11n / 10n;
+    }
 
     logger.info(
       {
         contract: contractAddress,
-        buyDex: opp.buyDex, sellDex: opp.sellDex,
+        buyDex: opp.buyDex,
+        sellDex: opp.sellDex,
         buyDexId: resolveDexId(opp.buyDex, opp.network),
         sellDexId: resolveDexId(opp.sellDex, opp.network),
         loanAmount: FLASH_LOAN_AMOUNT_USDT,
@@ -289,32 +221,32 @@ export async function executeFlashLoan(
 
     const tx = await bot.initiateArbitrage(
       {
-        buyDexId:    resolveDexId(opp.buyDex,  opp.network),
-        sellDexId:   resolveDexId(opp.sellDex, opp.network),
+        buyDexId: resolveDexId(opp.buyDex, opp.network),
+        sellDexId: resolveDexId(opp.sellDex, opp.network),
         tokenBorrow: usdtAddress,
-        tokenBuy:    wbtcAddress,
-        loanAmount:  loanAmountRaw,
-        minProfit:   minProfitRaw,
-        deadline:    BigInt(deadline),
-        hops:        opp.hops ?? 1,
-        hopDexId:    0,
-        hopToken:    ethers.ZeroAddress,
+        tokenBuy: wbtcAddress,
+        loanAmount: loanAmountRaw,
+        minProfit: minProfitRaw,
+        deadline: BigInt(deadline),
+        hops: opp.hops ?? 1,
+        hopDexId: 0,
+        hopToken: ethers.ZeroAddress,
       },
-      { ...(gasPrice != null && { gasPrice }) },
+      txOptions,
     );
 
-    logger.info({ txHash: tx.hash }, "Transaction submitted — waiting for receipt");
+    logger.info({ txHash: tx.hash }, "Transaction submitted - waiting for receipt");
 
-    const receipt = await tx.wait();
+    const receipt = await tx.wait(1);
     const success = receipt?.status === 1;
 
     const gasCostUsd = receipt
       ? parseFloat(
           (
-            Number(receipt.gasUsed) *
-            Number(feeData.gasPrice ?? 0n) /
-            1e18 *
-            NATIVE_TOKEN_PRICES[opp.network]!
+            (Number(receipt.gasUsed) *
+              Number(feeData.gasPrice ?? 0n)) /
+              1e18 *
+              NATIVE_TOKEN_PRICES[opp.network]!
           ).toFixed(4),
         )
       : gasEstimate.gasCostUsd;
@@ -326,18 +258,20 @@ export async function executeFlashLoan(
 
     return {
       id: generateId(),
-      buyDex: opp.buyDex, sellDex: opp.sellDex,
+      buyDex: opp.buyDex,
+      sellDex: opp.sellDex,
       network: opp.network,
-      buyPrice: opp.buyPrice, sellPrice: opp.sellPrice,
+      buyPrice: opp.buyPrice,
+      sellPrice: opp.sellPrice,
       loanAmount: FLASH_LOAN_AMOUNT_USDT,
-      profit:    success ? parseFloat(opp.estimatedProfit.toFixed(4)) : 0,
+      profit: success ? parseFloat(opp.estimatedProfit.toFixed(4)) : 0,
       profitPct: success
         ? parseFloat(((opp.estimatedProfit / FLASH_LOAN_AMOUNT_USDT) * 100).toFixed(4))
         : 0,
-      gasCost:   gasCostUsd,
+      gasCost: gasCostUsd,
       gasSource: config.gasSource,
-      txHash:    receipt?.hash,
-      status:    success ? "success" : "reverted",
+      txHash: receipt?.hash,
+      status: success ? "success" : "reverted",
       executedAt,
       errorMessage: success ? undefined : "Transaction reverted on-chain",
     };
@@ -345,18 +279,21 @@ export async function executeFlashLoan(
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err, opp: opp.id }, "Flash loan execution threw");
 
-    // Distinguish revert (contract rejected) from infra errors
-    const isRevert = message.includes("revert") ||
-                     message.includes("execution reverted") ||
-                     message.includes("CALL_EXCEPTION");
+    const isRevert =
+      message.includes("revert") ||
+      message.includes("execution reverted") ||
+      message.includes("CALL_EXCEPTION");
 
     return {
       id: generateId(),
-      buyDex: opp.buyDex, sellDex: opp.sellDex,
+      buyDex: opp.buyDex,
+      sellDex: opp.sellDex,
       network: opp.network,
-      buyPrice: opp.buyPrice, sellPrice: opp.sellPrice,
+      buyPrice: opp.buyPrice,
+      sellPrice: opp.sellPrice,
       loanAmount: FLASH_LOAN_AMOUNT_USDT,
-      profit: 0, profitPct: 0,
+      profit: 0,
+      profitPct: 0,
       gasCost: parseFloat(gasEstimate.gasCostUsd.toFixed(4)),
       gasSource: config.gasSource,
       txHash: undefined,

@@ -1,80 +1,149 @@
 // contracts/deploy.js
 const { ethers } = require("ethers");
+const fs = require("fs");
+const path = require("path");
 require("dotenv").config();
 
 async function main() {
-  console.log("🚀 Starting FlashLoan Arbitrage Contract Deployment...");
+  console.log("Starting ArbitrageBot Deployment...\n");
 
   const NETWORK = process.env.NETWORK || "arbitrum";
 
   const RPC_URLS = {
     arbitrum: "https://arb1.arbitrum.io/rpc",
-    arbitrumSepolia: "https://sepolia-rollup.arbitrum.io/rpc"
+    arbitrumSepolia: "https://sepolia-rollup.arbitrum.io/rpc",
+  };
+
+  const AAVE_POOL_ADDRESSES = {
+    arbitrum: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    arbitrumSepolia: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
   };
 
   const provider = new ethers.JsonRpcProvider(RPC_URLS[NETWORK] || RPC_URLS.arbitrum);
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-  console.log(`📍 Deploying on ${NETWORK} with account: ${wallet.address}`);
+  console.log(`Network: ${NETWORK}`);
+  console.log(`Deployer: ${wallet.address}\n`);
 
-  // Aave FlashLoan Provider on Arbitrum
-  const AAVE_FLASHLOAN_PROVIDER = NETWORK === "arbitrum" 
-    ? "0x794a61358D6845594F94dc1DB02A252b5b4814aD" 
-    : "0x012bAC54348C0E8189D913f9BAa6c2e4f8dE53D9"; // Sepolia testnet
+  const balance = await provider.getBalance(wallet.address);
+  console.log(`Balance: ${ethers.formatEther(balance)} ETH\n`);
 
-  // Contract Factory
-  const FlashLoanArbitrage = await ethers.getContractFactory("FlashLoanArbitrage", wallet);
+  if (balance < ethers.parseEther("0.01")) {
+    console.error("ERROR: Insufficient balance. Need at least 0.01 ETH for deployment.");
+    process.exit(1);
+  }
 
-  console.log("📄 Deploying FlashLoanArbitrage contract...");
+  // Read compiled bytecode
+  const contractPath = path.join(__dirname, "out", "ArbitrageBot.sol", "ArbitrageBot.json");
+  if (!fs.existsSync(contractPath)) {
+    console.error("ERROR: Contract not compiled. Run: forge build contracts/ArbitrageBot.sol --out contracts/out");
+    process.exit(1);
+  }
 
-  const contract = await FlashLoanArbitrage.deploy(AAVE_FLASHLOAN_PROVIDER);
+  const artifact = JSON.parse(fs.readFileSync(contractPath, "utf8"));
+  const { abi, bytecode } = artifact;
+
+  const aavePool = AAVE_POOL_ADDRESSES[NETWORK] || AAVE_POOL_ADDRESSES.arbitrum;
+
+  console.log(`Aave Pool: ${aavePool}`);
+
+  const factory = new ethers.ContractFactory(abi, bytecode, wallet);
+
+  console.log("Deploying ArbitrageBot...");
+
+  const contract = await factory.deploy(aavePool, wallet.address, {
+    gasLimit: 3_000_000,
+  });
+
+  console.log(`Transaction hash: ${contract.deploymentTransaction().hash}`);
+  console.log("Waiting for confirmation...");
 
   await contract.waitForDeployment();
   const contractAddress = await contract.getAddress();
 
-  console.log(`✅ Contract deployed at: ${contractAddress}`);
-  console.log(`🔗 View on Arbiscan: https://arbiscan.io/address/${contractAddress}`);
+  console.log(`\nContract deployed at: ${contractAddress}\n`);
 
-  // === Configure DEX Routers ===
-  console.log("⚙️ Setting up DEX configurations...");
-
-  const DEX_CONFIG = {
-    uniswap: {
-      router: "0x4752ba5DBc23f44D87826275F1D0C0e1A2d9c2A8", // Uniswap V3 Router on Arbitrum (or V2)
-      fee: 3000
-    },
-    sushiswap: {
-      router: "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
-      fee: 3000
-    },
-    camelot: {
-      router: "0xc873fEcbd354f5A56E8E3b97e39D2a2A9f4dA2f4",
-      fee: 2500
-    }
+  // Configure DEXs
+  const DEX_CONFIGS = {
+    arbitrum: [
+      // dexId 0: PancakeSwap V3
+      {
+        dexId: 0,
+        router: "0x1A1f72651F34782990d2fDb087a9235630F73569",
+        dexType: 0,
+        feeTier: 3000,
+      },
+      // dexId 1: Uniswap V3
+      {
+        dexId: 1,
+        router: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+        dexType: 0,
+        feeTier: 3000,
+      },
+      // dexId 2: SushiSwap
+      {
+        dexId: 2,
+        router: "0x1b02dA8Cb0d097eB8D57A175b8897D913111F124",
+        dexType: 1,
+        feeTier: 0,
+      },
+      // dexId 3: Camelot V3
+      {
+        dexId: 3,
+        router: "0xc7DD1dD2E5B14f51c08a9A7418E3595566Bb0932",
+        dexType: 7,
+        feeTier: 10000,
+      },
+    ],
+    arbitrumSepolia: [
+      // Testnet configs
+      {
+        dexId: 0,
+        router: "0x1A1f72651F34782990d2fDb087a9235630F73569",
+        dexType: 0,
+        feeTier: 3000,
+      },
+    ],
   };
 
-  for (const [name, config] of Object.entries(DEX_CONFIG)) {
+  const dexConfigs = DEX_CONFIGS[NETWORK] || DEX_CONFIGS.arbitrum;
+
+  console.log("Configuring DEX routers...\n");
+
+  for (const cfg of dexConfigs) {
     try {
-      const tx = await contract.setDexConfig(
-        name,
-        config.router,
-        config.fee
-      );
+      const tx = await contract.setDexConfig(cfg.dexId, {
+        router: cfg.router,
+        dexType: cfg.dexType,
+        feeTier: cfg.feeTier || 0,
+        balancerPoolId: ethers.zeroPadBytes("0x", 32),
+        curveIndexIn: 0,
+        curveIndexOut: 0,
+        veloFactory: ethers.ZeroAddress,
+        veloStable: false,
+        lbBinStep: 0,
+      });
       await tx.wait();
-      console.log(`✅ Configured ${name} router`);
+      console.log(`DEX ${cfg.dexId} configured: router=${cfg.router}`);
     } catch (e) {
-      console.warn(`⚠️ Failed to configure ${name}:`, e.shortMessage || e.message);
+      console.error(`Failed to configure DEX ${cfg.dexId}: ${e.message}`);
     }
   }
 
-  console.log("\n🎉 Deployment completed successfully!");
-  console.log(`\nUpdate your .env file with:`);
-  console.log(`FLASH_LOAN_CONTRACT=${contractAddress}`);
+  console.log("\n========================================");
+  console.log("DEPLOYMENT COMPLETE");
+  console.log("========================================");
+  console.log(`Contract Address: ${contractAddress}`);
+  console.log(`Network: ${NETWORK}`);
+  console.log(`\nUpdate your configuration:\n`);
+  console.log(`CONTRACT_ADDRESSES: {`);
+  console.log(`  ${NETWORK}: "${contractAddress}",`);
+  console.log(`}`);
 }
 
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error("❌ Deployment failed:", error);
+    console.error("Deployment failed:", error);
     process.exit(1);
   });
