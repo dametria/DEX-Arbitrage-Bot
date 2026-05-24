@@ -47,39 +47,34 @@ async function main() {
 
     const contract = new ethers.Contract(contractAddress, abi, wallet);
 
-    // =============== TEST CALL ===============
-    console.log("\n Testing executeArbitrage with safe parameters...");
+     // =============== SAFER TEST CALL ===============
+    console.log("\n Testing executeArbitrage with safer slippage...");
 
     const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
     const USDT = "0x55d398326f99059fF775485246999027B3197955";
 
     try {
+        const loanAmount = ethers.parseUnits("1000", 18);   // 1000 USDT
+
         const tx = await contract.executeArbitrage(
-            WBNB,                                    // tokenIn
-            USDT,                                    // tokenOut
-            ethers.parseUnits("800", 18),           // loanAmount = 800 USDT
-            true,                                    // v2First
-            500,                                     // v3Fee (0.05%)
-            ethers.parseUnits("0.5", 18),           // minProfit = 0.5 USDT
-            ethers.parseUnits("790", 18),           // minOut1
-            ethers.parseUnits("790", 18)            // minOut2
+            WBNB,                                      // tokenIn
+            USDT,                                      // tokenOut
+            loanAmount,
+            true,                                      // v2First
+            500,                                       // v3Fee
+            ethers.parseUnits("0.3", 18),             // minProfit = 0.3 USDT
+            ethers.parseUnits("970", 18),             // minOut1 → ~3% slippage
+            ethers.parseUnits("970", 18)              // minOut2 → ~3% slippage
         );
 
-        console.log(`Test transaction sent: ${tx.hash}`);
-        console.log("Waiting for confirmation...");
-
+        console.log(`Transaction sent: ${tx.hash}`);
         const receipt = await tx.wait();
-        console.log("Test transaction confirmed!");
+        console.log("Arbitrage executed successfully!");
 
     } catch (error) {
-        console.error("Test call failed:");
+        console.error("Failed:");
         console.error(error.shortMessage || error.message);
-
-        if (error.message.includes("No V2 pair")) {
-            console.error("Tip: Try a different tokenIn that has a USDT pair.");
-        }
     }
-}
 
 main()
     .then(() => process.exit(0))
