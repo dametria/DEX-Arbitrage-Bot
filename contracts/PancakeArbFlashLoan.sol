@@ -213,9 +213,19 @@ contract PancakeArbFlashLoan {
         require(tokenIn != address(0) && tokenOut != address(0), "Invalid tokens");
 
         // Validate pair exists for flash-loan
-        address pair = FACTORY.getPair(USDT, tokenIn);
-        require(pair != address(0), "No V2 pair for flash loan");
+        const USDT = "0x55d398326f99059fF775485246999027B3197955";
+        const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 
+await contract.executeArbitrage(
+    WBNB,                                   // tokenIn - WBNB has excellent liquidity
+    USDT,                                   // tokenOut
+    ethers.parseUnits("2000", 18),         // loanAmount = 2000 USDT
+    true,                                   // v2First = true
+    500,                                    // v3Fee (500 = 0.05%)
+    ethers.parseUnits("2", 18),            // minProfit = 2 USDT
+    ethers.parseUnits("1980", 18),         // minOut1 (slippage protection)
+    ethers.parseUnits("1980", 18)          // minOut2
+);
         // Validate that path exists for both swaps (early validation)
         if (v2First) {
             address v2Pair = FACTORY.getPair(USDT, tokenIn);
