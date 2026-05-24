@@ -128,9 +128,6 @@ contract PancakeArbFlashLoan {
     IPancakeV3Router constant V3_ROUTER =
         IPancakeV3Router(0x13f4EA83D0bd40E75C8222255bc855a974568Dd4);
 
-    address constant USDT = 0x55d398326f99059fF775485246999027B3197955;
-    address constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
-
     // Flash-loan state tracking (prevents callback spoofing)
     bool private inFlashLoan;
     address private pendingFlashLoanToken;
