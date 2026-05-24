@@ -5,7 +5,7 @@ import {
   type ArbitrageOpportunity,
 } from "./arbitrageDetector.js";
 import { executeFlashLoan, type TradeRecord } from "./flashLoanExecutor.js";
-import { saveTrade, updateBotStats, getTradeHistory, getBotStats } from "./db.js";
+import { saveTrade, updateBotStats, getTradeHistory as getTradeHistoryFromDb, getBotStats } from "./db.js";
 
 export interface BotConfig {
   gasSource: "flashloan" | "contract";
@@ -419,7 +419,7 @@ export function getTradeHistory(): TradeRecord[] {
 }
 
 export async function loadTradeHistoryFromDb(): Promise<TradeRecord[]> {
-  const history = await getTradeHistory(50);
+  const history = await getTradeHistoryFromDb(50);
   if (history.length > 0) {
     state.tradeHistory = history;
     log.info({ count: history.length }, "Trade history loaded from database");

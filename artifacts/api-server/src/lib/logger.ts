@@ -24,7 +24,7 @@ export const logger = pino({
     level: (label) => ({ level: label }),
     bindings: () => ({}),
   },
-  timestamp: pino.timestamp,
+  timestamp: () => `,"time":"${Date.now()}"`,
   ...(isProduction
     ? {}
     : {
@@ -53,7 +53,7 @@ export function createModuleLogger(module: string) {
 }
 
 export function logTradeEvent(
-  event: "opportunity_detected" | "execution_started" | "execution_success" | "execution_failed" | "transaction_sent" | "transaction_confirmed",
+  event: "opportunity_detected" | "execution_started" | "execution_success" | "execution_failed" | "transaction_sent" | "transaction_confirmed" | "transaction_reverted",
   data: Record<string, unknown>,
 ) {
   const eventLogger = createModuleLogger("trade");
