@@ -1,72 +1,82 @@
-// deploy.js
+// deploy-and-test.js
 const ethers = require("ethers");
 const fs = require("fs");
 const path = require("path");
 
 async function main() {
-    // ====================== CONFIG ======================
-    const NETWORK = "bsc";                    // Change if needed
-    const PRIVATE_KEY = process.env.PRIVATE_KEY; // Load from .env
+    // ===================== CONFIG =====================
+    const RPC_URL = "https://bsc-dataseed.binance.org/";
+    const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
     if (!PRIVATE_KEY) {
-        console.error(" PRIVATE_KEY not set in environment variables");
+        console.error("Set PRIVATE_KEY environment variable!");
         process.exit(1);
     }
-
-    // RPC for BSC Mainnet (you can use your own or Ankr/Alchemy)
-    const RPC_URL = "https://bsc-dataseed.binance.org/";
 
     const provider = new ethers.JsonRpcProvider(RPC_URL);
     const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
     console.log(`Deploying from: ${wallet.address}`);
-    // ===================================================
+    // ================================================
 
     const contractPath = path.join(__dirname, "out", "PancakeArbFlashLoan.sol", "PancakeArbFlashLoan.json");
 
     if (!fs.existsSync(contractPath)) {
-        console.error(" Contract not compiled. Run:");
-        console.error("   forge build contracts/PancakeArbFlashLoan.sol --out contracts/out");
+        console.error("Artifact not found. Run: forge build --force");
         process.exit(1);
     }
 
     const artifact = JSON.parse(fs.readFileSync(contractPath, "utf8"));
     const { abi, bytecode } = artifact;
 
-    // Debug constructor to avoid future confusion
-    const constructor = abi.find(x => x.type === "constructor");
-    console.log("Constructor arguments expected:", constructor ? constructor.inputs.length : 0);
-
-    const factory = new ethers.ContractFactory(abi, bytecode, wallet);
+    const factory = new ethers.ContractFactory(abi, bytecode.object || bytecode, wallet);
 
     console.log("\n Deploying PancakeArbFlashLoan...");
 
+    const deployment = await factory.deploy({
+        gasLimit: 4_000_000,
+        gasPrice: ethers.parseUnits("1.2", "gwei")
+    });
+
+    console.log(`Tx Hash: ${deployment.deploymentTransaction().hash}`);
+    await deployment.waitForDeployment();
+
+    const contractAddress = await deployment.getAddress();
+    console.log(`Contract deployed at: ${contractAddress}`);
+    console.log(`https://bscscan.com/address/${contractAddress}`);
+
+    const contract = new ethers.Contract(contractAddress, abi, wallet);
+
+    // =============== TEST CALL ===============
+    console.log("\n Testing executeArbitrage with safe parameters...");
+
+    const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
+    const USDT = "0x55d398326f99059fF775485246999027B3197955";
+
     try {
-        const contract = await factory.deploy({
-            gasLimit: 3_500_000,     // Increased a bit for safety
-        });
+        const tx = await contract.executeArbitrage(
+            WBNB,                                    // tokenIn
+            USDT,                                    // tokenOut
+            ethers.parseUnits("800", 18),           // loanAmount = 800 USDT
+            true,                                    // v2First
+            500,                                     // v3Fee (0.05%)
+            ethers.parseUnits("0.5", 18),           // minProfit = 0.5 USDT
+            ethers.parseUnits("790", 18),           // minOut1
+            ethers.parseUnits("790", 18)            // minOut2
+        );
 
-        console.log(`Transaction hash: ${contract.deploymentTransaction().hash}`);
-
+        console.log(`Test transaction sent: ${tx.hash}`);
         console.log("Waiting for confirmation...");
-        await contract.waitForDeployment();
 
-        const contractAddress = await contract.getAddress();
-
-        console.log(`\n SUCCESS! Contract deployed at:`);
-        console.log(`   ${0x5954b7c5e9b9FE331E902Da62C9F998f90AcC16F}`);
-        console.log(`\nExplorer: https://bscscan.com/address/${0x5954b7c5e9b9FE331E902Da62C9F998f90AcC16F}`);
-
-        // Optional: Verify on BscScan (you can run this manually later)
-        // forge verify-contract <address> PancakeArbFlashLoan --chain bsc
+        const receipt = await tx.wait();
+        console.log("Test transaction confirmed!");
 
     } catch (error) {
-        console.error("\n Deployment failed:");
-        console.error(error.message);
-        
-        if (error.message.includes("constructor")) {
-            console.error("\n Hint: Make sure you recompiled after last change:");
-            console.error("   forge build --force");
+        console.error("Test call failed:");
+        console.error(error.shortMessage || error.message);
+
+        if (error.message.includes("No V2 pair")) {
+            console.error("Tip: Try a different tokenIn that has a USDT pair.");
         }
     }
 }
