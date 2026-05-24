@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
 
-import "forge-std/Script.sol";
 import "../contracts/PancakeArbFlashLoan.sol";
 
 /**
@@ -40,9 +38,11 @@ contract DeployPancakeArb is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
-        console.log("═══════════════════════════════════════════════════════════");
+         
+     // console.log("════════════════════════════");
         console.log("Deploying PancakeArbFlashLoan Contract");
-        console.log("═══════════════════════════════════════════════════════════");
+        
+     // console.log("══════════════════════");
         console.log("Deployer Address:", deployer);
         console.log("Chain ID:", block.chainid);
         console.log("");
@@ -61,9 +61,9 @@ contract DeployPancakeArb is Script {
 
         // Print results
         console.log("");
-        console.log("═══════════════════════════════════════════════════════════");
-        console.log("✅ DEPLOYMENT SUCCESSFUL");
-        console.log("═══════════════════════════════════════════════════════════");
+    //  console.log("═══════════════════════════");
+        console.log("DEPLOYMENT SUCCESSFUL");
+    //  console.log("════════════════════════");
         console.log("Contract Address:", deployedAddress);
         console.log("Owner Address:", deployer);
         console.log("");
@@ -119,7 +119,7 @@ contract DeployPancakeArb is Script {
 
         console.log("");
         console.log("Verify on BscScan:");
-        console.log("─────────────────────────────────────────────────────────");
+     // console.log("────────────────────────");
         console.log("forge verify-contract \\");
         console.log(vm.toString(contractAddress), " \\");
         console.log("PancakeArbFlashLoan \\");
@@ -130,9 +130,9 @@ contract DeployPancakeArb is Script {
     }
 
     function _printNextSteps(address contractAddress) internal pure {
-        console.log("═══════════════════════════════════════════════════════════");
+    //  console.log("═══════════════════════");
         console.log("Next Steps:");
-        console.log("═══════════════════════════════════════════════════════════");
+    //  console.log("══════════════════════");
         console.log("1. Fund the contract with USDT and BNB for gas:");
         console.log("   - USDT: For flash-loan repayment + profit");
         console.log("   - BNB: For gas fees");
@@ -155,6 +155,6 @@ contract DeployPancakeArb is Script {
         console.log("   - loanAmount: Size of flash-loan");
         console.log("");
         console.log("Contract Address: ", contractAddress);
-        console.log("═══════════════════════════════════════════════════════════");
+   //   console.log("══════════════");
     }
 }
