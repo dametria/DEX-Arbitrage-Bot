@@ -51,8 +51,7 @@ async function main() {
 
   console.log("Deploying PancakeArbFlashLoan...");
 
-  const contract = await factory.deploy(pancakeRouter, wallet.address, {
-    gasLimit: 3_000_000,
+  const contract = await factory.deploy(pancakeRouter,{gasLimit: 3_000_000,
   });
 
   console.log(`Transaction hash: ${contract.deploymentTransaction().hash}`);
