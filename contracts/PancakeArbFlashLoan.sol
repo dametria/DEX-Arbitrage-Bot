@@ -209,9 +209,6 @@ contract PancakeArbFlashLoan {
         require(loanAmount > 0, "Loan amount must be > 0");
         require(tokenIn != address(0) && tokenOut != address(0), "Invalid tokens");
 
-        // Validate pair exists for flash-loan
-        const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
-
         // Validate that path exists for both swaps (early validation)
         if (v2First) {
             address v2Pair = FACTORY.getPair(USDT, tokenIn);
