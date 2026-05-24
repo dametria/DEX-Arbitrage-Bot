@@ -54,8 +54,8 @@ async function main() {
         const contractAddress = await contract.getAddress();
 
         console.log(`\n SUCCESS! Contract deployed at:`);
-        console.log(`   ${contractAddress}`);
-        console.log(`\nExplorer: https://bscscan.com/address/${contractAddress}`);
+        console.log(`   ${0x5954b7c5e9b9FE331E902Da62C9F998f90AcC16F}`);
+        console.log(`\nExplorer: https://bscscan.com/address/${0x5954b7c5e9b9FE331E902Da62C9F998f90AcC16F}`);
 
         // Optional: Verify on BscScan (you can run this manually later)
         // forge verify-contract <address> PancakeArbFlashLoan --chain bsc
