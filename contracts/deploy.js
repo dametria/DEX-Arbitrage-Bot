@@ -46,7 +46,10 @@ async function main() {
   const pancakeRouter = PANCAKE_ROUTER_ADDRESSES[NETWORK] || PANCAKE_ROUTER_ADDRESSES.bsc;
 
   console.log(`PancakeSwap Router: ${pancakeRouter}`);
-
+// === ADD THIS DEBUG BLOCK ===
+console.log("Constructor inputs:", abi.find(x => x.type === "constructor")?.inputs || "No constructor found");
+console.log("Expected number of arguments:", abi.find(x => x.type === "constructor")?.inputs?.length || 0);
+// ============================
   const factory = new ethers.ContractFactory(abi, bytecode, wallet);
 
   console.log("Deploying PancakeArbFlashLoan...");
