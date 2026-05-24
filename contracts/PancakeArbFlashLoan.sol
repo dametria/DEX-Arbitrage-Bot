@@ -128,6 +128,9 @@ contract PancakeArbFlashLoan {
     IPancakeV3Router constant V3_ROUTER =
         IPancakeV3Router(0x13f4EA83D0bd40E75C8222255bc855a974568Dd4);
 
+    address constant USDT = 0x55d398326f99059fF775485246999027B3197955;
+    address constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
+
     // Flash-loan state tracking (prevents callback spoofing)
     bool private inFlashLoan;
     address private pendingFlashLoanToken;
@@ -195,7 +198,24 @@ contract PancakeArbFlashLoan {
      * @param minOut1    Minimum output from first swap (protects against sandwich)
      * @param minOut2    Minimum output from second swap (protects against sandwich)
      */
-    
+    function executeArbitrage(
+        address tokenIn,
+        address tokenOut,
+        uint256 loanAmount,
+        bool v2First,
+        uint24 v3Fee,
+        uint256 minProfit,
+        uint256 minOut1,
+        uint256 minOut2
+    ) external onlyOwner {
+        require(!inFlashLoan, "Flash loan already in progress");
+        require(loanAmount > 0, "Loan amount must be > 0");
+        require(tokenIn != address(0) && tokenOut != address(0), "Invalid tokens");
+
+        // Validate pair exists for flash-loan
+        address pair = FACTORY.getPair(USDT, tokenIn);
+        require(pair != address(0), "No V2 pair for flash loan");
+
         // Validate that path exists for both swaps (early validation)
         if (v2First) {
             address v2Pair = FACTORY.getPair(USDT, tokenIn);
@@ -252,8 +272,7 @@ contract PancakeArbFlashLoan {
         uint /*amount1*/,
         bytes calldata data
     ) external {
-        
-// Verify callback is legitimately from a pending flash-loan
+        // Verify callback is legitimately from a pending flash-loan
         require(inFlashLoan, "No pending flash loan");
         require(msg.sender == FACTORY.getPair(USDT, pendingFlashLoanToken), "Unauthorized callback");
 
