@@ -195,20 +195,7 @@ contract PancakeArbFlashLoan {
      * @param minOut1    Minimum output from first swap (protects against sandwich)
      * @param minOut2    Minimum output from second swap (protects against sandwich)
      */
-    function executeArbitrage(
-        address tokenIn,
-        address tokenOut,
-        uint256 loanAmount,
-        bool v2First,
-        uint24 v3Fee,
-        uint256 minProfit,
-        uint256 minOut1,
-        uint256 minOut2
-    ) external onlyOwner {
-        require(!inFlashLoan, "Flash loan already in progress");
-        require(loanAmount > 0, "Loan amount must be > 0");
-        require(tokenIn != address(0) && tokenOut != address(0), "Invalid tokens");
-
+    
         // Validate that path exists for both swaps (early validation)
         if (v2First) {
             address v2Pair = FACTORY.getPair(USDT, tokenIn);
@@ -265,7 +252,8 @@ contract PancakeArbFlashLoan {
         uint /*amount1*/,
         bytes calldata data
     ) external {
-        // Verify callback is legitimately from a pending flash-loan
+        
+// Verify callback is legitimately from a pending flash-loan
         require(inFlashLoan, "No pending flash loan");
         require(msg.sender == FACTORY.getPair(USDT, pendingFlashLoanToken), "Unauthorized callback");
 
