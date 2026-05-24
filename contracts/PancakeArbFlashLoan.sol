@@ -141,7 +141,7 @@ contract PancakeArbFlashLoan {
 
     // Deadline for swaps (in seconds from block.timestamp)
     // Reduced from 60s to 15s for MEV protection
-    uint256 constant SWAP_DEADLINE = 15 seconds;
+    uint256 constant SWAP_DEADLINE = 35 seconds;
 
     // ── Constants ──────────────────────────────────────────────────────────
 
