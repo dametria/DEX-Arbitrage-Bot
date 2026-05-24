@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { logger } from "../lib/logger.js";
+import { logger, createModuleLogger, logPerformance, logError } from "../lib/logger.js";
 
 export interface DexPrice {
   dex: string;
@@ -7,6 +7,8 @@ export interface DexPrice {
   price: number;
   liquidity: number;
   updatedAt: string;
+  source: "onchain" | "fallback";
+  error?: string;
 }
 
 interface DexQuoterConfig {
@@ -18,20 +20,11 @@ interface DexQuoterConfig {
   network: "avalanche" | "arbitrum" | "optimism";
 }
 
+const log = createModuleLogger("price-monitor");
+
 const QUOTER_ABI = [
   "function quoteExactInputSingle(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint160 sqrtPriceLimitX96) external returns (uint256 amountOut)",
   "function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts)",
-];
-
-const PAIR_ABI = [
-  "function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
-  "function token0() external view returns (address)",
-  "function token1() external view returns (address)",
-];
-
-const ERC20_ABI = [
-  "function decimals() external view returns (uint8)",
-  "function symbol() external view returns (string)",
 ];
 
 const WBTC_ADDRESSES: Record<string, string> = {
@@ -46,17 +39,11 @@ const USDT_ADDRESSES: Record<string, string> = {
   optimism: "0x94b008aA00579c1307B0EF2C499aD98BE8348085",
 };
 
-const WETH_ADDRESSES: Record<string, string> = {
-  avalanche: "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bC10e95",
-  arbitrum: "0x82aF49447D8a0723c23C9b0e2c6A3a2a8e7e6e1e",
-  optimism: "0x4200000000000000000000000000000000000006",
-};
-
 const DEX_QUOTERS: DexQuoterConfig[] = [
   // Avalanche DEXs
   {
     name: "Trader Joe V2.1",
-    quoterAddress: "0xb356B4E7168cB3c39d6395a3788f015627958624",
+    quoterAddress: "0xb356B3A919B12b35E894666f1b4E7FfD62869E97",
     routerAddress: "0x60aE616a2155Ee3d9A68540Ba58462DC756bDC80",
     dexType: 2,
     network: "avalanche",
@@ -71,11 +58,11 @@ const DEX_QUOTERS: DexQuoterConfig[] = [
   {
     name: "SushiSwap",
     quoterAddress: "0x6123f3BAAB48a01e88F7f69381a0307e6a775cAB",
-    routerAddress: "0x1b02dA8Cb0d097eB8D57A175b8897D913111F124",
+    routerAddress: "0x1b02dA8Cb0d097eB8D57A175b913111F124",
     dexType: 1,
     network: "avalanche",
   },
-  // Arbitrum DEXs - PancakeSwap instead of GMX
+  // Arbitrum DEXs
   {
     name: "PancakeSwap V3",
     quoterAddress: "0x44aBa8E0d68F6938aE8c23856D9aC8a7e5813675",
@@ -130,69 +117,167 @@ const RPC_URLS: Record<string, string> = {
   optimism: "https://mainnet.optimism.io",
 };
 
-const UINT256_MAX = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 const AMOUNT_IN_USDT = BigInt(10_000_000_000); // $10,000 USDT (6 decimals)
+
+// Provider cache with connection state
+const providerCache: Record<string, { provider: ethers.JsonRpcProvider; healthy: boolean; lastError?: number }> = {};
+
+function getProvider(network: string): ethers.JsonRpcProvider {
+  if (!providerCache[network] || !providerCache[network].healthy) {
+    const rpcUrl = RPC_URLS[network];
+    if (!rpcUrl) {
+      throw new Error(`No RPC URL configured for network: ${network}`);
+    }
+    providerCache[network] = {
+      provider: new ethers.JsonRpcProvider(rpcUrl, undefined, {
+        batchMaxCount: 1,
+        batchStallTime: 0,
+      }),
+      healthy: true,
+    };
+  }
+  return providerCache[network].provider;
+}
+
+function markProviderUnhealthy(network: string) {
+  if (providerCache[network]) {
+    providerCache[network].healthy = false;
+    providerCache[network].lastError = Date.now();
+  }
+}
 
 let priceCache: DexPrice[] = [];
 let lastFetch: number = 0;
 const CACHE_TTL = 15_000;
 
+class PriceFetchError extends Error {
+  constructor(
+    public readonly dex: string,
+    public readonly network: string,
+    public readonly reason: string,
+    public readonly originalError?: Error,
+  ) {
+    super(`Failed to fetch price from ${dex} on ${network}: ${reason}`);
+    this.name = "PriceFetchError";
+  }
+}
+
 async function fetchPriceFromDex(
   provider: ethers.JsonRpcProvider,
   config: DexQuoterConfig,
-): Promise<{ price: number; liquidity: number } | null> {
+): Promise<{ price: number; liquidity: number; error?: string }> {
+  const startTime = Date.now();
+  const usdt = USDT_ADDRESSES[config.network];
+  const wbtc = WBTC_ADDRESSES[config.network];
+
+  const logContext = {
+    dex: config.name,
+    network: config.network,
+    quoter: config.quoterAddress,
+  };
+
+  log.debug(logContext, "Starting price fetch");
+
+  if (!usdt || !wbtc) {
+    throw new PriceFetchError(config.name, config.network, "Missing token addresses");
+  }
+
   try {
-    const usdt = USDT_ADDRESSES[config.network];
-    const wbtc = WBTC_ADDRESSES[config.network];
-
-    if (!usdt || !wbtc) {
-      logger.warn({ dex: config.name, network: config.network }, "Missing token addresses");
-      return null;
-    }
-
     const quoter = new ethers.Contract(config.quoterAddress, QUOTER_ABI, provider);
 
     let wbtcReceived: bigint;
     let liquidityUsd: number;
 
     if (config.dexType === 0 || config.dexType === 7) {
-      // Uniswap V3 style quoter (PancakeSwap, Uniswap, Camelot V3)
+      // V3 style quoter (PancakeSwap, Uniswap, Camelot)
       const fee = config.feeTier ?? 3000;
-      wbtcReceived = await quoter.quoteExactInputSingle.staticCall(
-        usdt,
-        wbtc,
-        fee,
-        AMOUNT_IN_USDT,
-        0
-      );
 
-      // Estimate liquidity based on reserves (simplified)
+      log.trace({ ...logContext, fee }, "Quoting V3 swap");
+
+      try {
+        wbtcReceived = await quoter.quoteExactInputSingle.staticCall(
+          usdt,
+          wbtc,
+          fee,
+          AMOUNT_IN_USDT,
+          0,
+        );
+      } catch (v3Error: unknown) {
+        const err = v3Error as Error;
+        throw new PriceFetchError(
+          config.name,
+          config.network,
+          `V3 quote failed: ${err.message.slice(0, 100)}`,
+          err,
+        );
+      }
+
       liquidityUsd = 500_000 + Math.random() * 2_000_000;
     } else {
       // V2 style routers (Pangolin, SushiSwap, Trader Joe)
       const path = [usdt, wbtc];
-      const amounts = await quoter.getAmountsOut.staticCall(AMOUNT_IN_USDT, path);
-      wbtcReceived = amounts[1];
 
-      // Estimate liquidity
+      log.trace(logContext, "Quoting V2 swap");
+
+      try {
+        const amounts = await quoter.getAmountsOut.staticCall(AMOUNT_IN_USDT, path);
+        wbtcReceived = amounts[1];
+      } catch (v2Error: unknown) {
+        const err = v2Error as Error;
+        throw new PriceFetchError(
+          config.name,
+          config.network,
+          `V2 quote failed: ${err.message.slice(0, 100)}`,
+          err,
+        );
+      }
+
       liquidityUsd = 300_000 + Math.random() * 1_500_000;
     }
 
-    if (wbtcReceived === 0n) return null;
+    if (wbtcReceived === 0n) {
+      throw new PriceFetchError(config.name, config.network, "Zero amount returned");
+    }
 
     // Convert WBTC amount to USD price
-    // wbtcReceived is in 8 decimals (WBTC has 8 decimals)
     const wbtcDecimals = 8;
     const wbtcAmount = Number(wbtcReceived) / Math.pow(10, wbtcDecimals);
     const priceUsd = (Number(AMOUNT_IN_USDT) / 1e6) / wbtcAmount;
+
+    logPerformance("price-monitor", "fetchPriceFromDex", startTime, {
+      dex: config.name,
+      price: priceUsd,
+    });
+
+    log.debug({
+      ...logContext,
+      price: priceUsd,
+      wbtcReceived: wbtcReceived.toString(),
+      durationMs: Date.now() - startTime,
+    }, "Price fetch successful");
 
     return {
       price: Math.round(priceUsd * 100) / 100,
       liquidity: Math.round(liquidityUsd),
     };
-  } catch (err) {
-    logger.debug({ dex: config.name, network: config.network, err }, "Failed to fetch price from DEX");
-    return null;
+  } catch (err: unknown) {
+    if (err instanceof PriceFetchError) {
+      throw err;
+    }
+
+    const error = err as Error;
+    log.debug({
+      ...logContext,
+      error: error.message,
+      durationMs: Date.now() - startTime,
+    }, "Price fetch failed");
+
+    throw new PriceFetchError(
+      config.name,
+      config.network,
+      `Unexpected error: ${error.message.slice(0, 100)}`,
+      error,
+    );
   }
 }
 
@@ -201,51 +286,159 @@ function simulatePrice(basePrice: number, spread: number): number {
   return Math.round(basePrice * jitter * 100) / 100;
 }
 
+function buildFallbackPrice(config: DexQuoterConfig, basePrice: number, errorMessage: string): DexPrice {
+  return {
+    dex: config.name,
+    network: config.network,
+    price: simulatePrice(basePrice, 0.008),
+    liquidity: 100_000 + Math.random() * 500_000,
+    updatedAt: new Date().toISOString(),
+    source: "fallback",
+    error: errorMessage,
+  };
+}
+
 export async function fetchAllPrices(): Promise<DexPrice[]> {
+  const startTime = Date.now();
+  log.info("Starting price fetch cycle");
+
   const now = Date.now();
   if (now - lastFetch < CACHE_TTL && priceCache.length > 0) {
+    log.debug({
+      age: now - lastFetch,
+      cacheSize: priceCache.length,
+    }, "Returning cached prices");
     return priceCache;
   }
 
   const timestamp = new Date().toISOString();
   const prices: DexPrice[] = [];
+  const errors: Array<{ dex: string; network: string; error: string }> = [];
   const basePriceFallback = 68_000;
+  let successCount = 0;
+  let fallbackCount = 0;
 
-  const providersCache: Record<string, ethers.JsonRpcProvider> = {};
-
+  // Group by network for parallel fetching
+  const byNetwork = new Map<string, DexQuoterConfig[]>();
   for (const config of DEX_QUOTERS) {
-    if (!providersCache[config.network]) {
-      providersCache[config.network] = new ethers.JsonRpcProvider(RPC_URLS[config.network]);
+    const list = byNetwork.get(config.network) ?? [];
+    list.push(config);
+    byNetwork.set(config.network, list);
+  }
+
+  const fetchPromises: Promise<void>[] = [];
+
+  for (const [network, configs] of byNetwork) {
+    let provider: ethers.JsonRpcProvider;
+
+    try {
+      provider = getProvider(network);
+    } catch (providerError) {
+      log.error({ network, error: String(providerError) }, "Failed to create provider");
+      for (const config of configs) {
+        const fallback = buildFallbackPrice(config, basePriceFallback, "Provider unavailable");
+        prices.push(fallback);
+        errors.push({ dex: config.name, network, error: "Provider unavailable" });
+        fallbackCount++;
+      }
+      continue;
     }
-    const provider = providersCache[config.network]!;
 
-    const result = await fetchPriceFromDex(provider, config);
+    for (const config of configs) {
+      const fetchPromise = (async () => {
+        try {
+          const result = await fetchPriceFromDex(provider, config);
 
-    if (result) {
-      prices.push({
-        dex: config.name,
-        network: config.network,
-        price: result.price,
-        liquidity: result.liquidity,
-        updatedAt: timestamp,
-      });
-    } else {
-      // Fallback price when on-chain call fails
-      prices.push({
-        dex: config.name,
-        network: config.network,
-        price: simulatePrice(basePriceFallback, 0.008),
-        liquidity: 100_000 + Math.random() * 500_000,
-        updatedAt: timestamp,
-      });
+          prices.push({
+            dex: config.name,
+            network: config.network,
+            price: result.price,
+            liquidity: result.liquidity,
+            updatedAt: timestamp,
+            source: "onchain",
+          });
+          successCount++;
+        } catch (err: unknown) {
+          const priceError = err instanceof PriceFetchError
+            ? err
+            : new PriceFetchError(config.name, config.network, String(err));
+
+          log.warn({
+            dex: config.name,
+            network: config.network,
+            reason: priceError.reason,
+            originalError: priceError.originalError?.message,
+          }, "Price fetch failed, using fallback");
+
+          const fallback = buildFallbackPrice(config, basePriceFallback, priceError.reason);
+          prices.push(fallback);
+          errors.push({
+            dex: config.name,
+            network: config.network,
+            error: priceError.reason,
+          });
+          fallbackCount++;
+
+          // Mark provider as unhealthy if network errors
+          if (priceError.reason.includes("network") || priceError.reason.includes("timeout")) {
+            markProviderUnhealthy(network);
+          }
+        }
+      })();
+
+      fetchPromises.push(fetchPromise);
     }
   }
 
+  await Promise.allSettled(fetchPromises);
+
+  // Sort by network then dex name
+  prices.sort((a, b) => {
+    if (a.network !== b.network) return a.network.localeCompare(b.network);
+    return a.dex.localeCompare(b.dex);
+  });
+
   priceCache = prices;
   lastFetch = now;
+
+  const duration = Date.now() - startTime;
+
+  log.info({
+    totalDexs: prices.length,
+    successCount,
+    fallbackCount,
+    errorCount: errors.length,
+    durationMs: duration,
+    cacheHit: false,
+  }, "Price fetch cycle complete");
+
+  if (errors.length > 0) {
+    log.warn({
+      errors: errors.slice(0, 5),
+      totalErrors: errors.length,
+    }, "Some price fetches failed");
+  }
+
   return prices;
 }
 
 export function getCachedPrices(): DexPrice[] {
   return priceCache;
+}
+
+export function getPriceStats() {
+  const stats = {
+    totalDexs: priceCache.length,
+    byNetwork: {} as Record<string, number>,
+    bySource: {} as Record<string, number>,
+    lastFetch: lastFetch ? new Date(lastFetch).toISOString() : null,
+    cacheAge: lastFetch ? Date.now() - lastFetch : null,
+  };
+
+  for (const price of priceCache) {
+    stats.byNetwork[price.network] = (stats.byNetwork[price.network] ?? 0) + 1;
+    stats.bySource[price.source] = (stats.bySource[price.source] ?? 0) + 1;
+  }
+
+  return stats;
 }
