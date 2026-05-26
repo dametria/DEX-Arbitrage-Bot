@@ -36,7 +36,7 @@ export interface TradeRecord {
 const log = createModuleLogger("flashloan-executor");
 
 const CONTRACT_ADDRESSES: Record<string, string | undefined> = {
-  arbitrum: "0x88379b60dAbaC8759d2577E52f0aB74D731724F9",
+  arbitrum: "0xf8f84f9F5bA225e0Ef0a852bD149E51140bE056D",
   avalanche: undefined,
   optimism: undefined,
 };
