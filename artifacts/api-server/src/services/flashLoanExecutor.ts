@@ -131,7 +131,7 @@
   }
 
   // Export singleton
-  export const flashLoanExecutor = new FlashLoanExecutor();{  // Avalanche (deployed IDs 0-3)
+  export const flashLoanExecutor = new FlashLoanExecutor();  // Avalanche (deployed IDs 0-3)
   "Trader Joe V2.1": 0,
   "Pangolin":        1,
   "SushiSwap":       2,
