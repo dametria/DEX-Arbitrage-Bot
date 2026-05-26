@@ -1,137 +1,70 @@
-  import { ethers } from 'ethers';
-  import { ExecutionOpportunity, ExecutionConfig, ExecutionResult } from '../types';
-  import dotenv from 'dotenv';
+import { ethers } from "ethers";
+import { logger } from "../lib/logger.js";
+import { type ArbitrageOpportunity } from "./arbitrageDetector.js";
 
-  dotenv.config();
+export interface TradeRecord {
+  id: string;
+  buyDex: string;
+  sellDex: string;
+  network: string;
+  buyPrice: number;
+  sellPrice: number;
+  loanAmount: number;
+  profit: number;
+  profitPct: number;
+  gasCost: number;
+  gasSource: string;
+  txHash: string | undefined;
+  status: "success" | "failed" | "reverted";
+  executedAt: string;
+  errorMessage: string | undefined;
+}
 
-  const DEADLINE_BUFFER_SECONDS = 120; // Increased for safety
+export interface ExecutionConfig {
+  gasSource: "flashloan" | "contract";
+  slippageTolerance: number;
+  walletAddress: string;
+  privateKey: string;
+}
 
-  // Contract ABIs (minimal relevant parts)
-  const FLASH_LOAN_ABI = [
-    "function executeArbitrage(address[] calldata path, uint256 amount, uint256 minProfit, uint256 deadline) external returns (bool)",
-    "function getDexRouter(string calldata dexName) external view returns (address)",
-    "function setDexConfig(string calldata name, address router, uint256 fee) external",
-  ];
+// Aave V3 Pool address (same on all three networks)
+const AAVE_V3_POOL: Record<string, string> = {
+  avalanche: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  arbitrum:  "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  optimism:  "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+};
 
-  export class FlashLoanExecutor {
-    private provider: ethers.JsonRpcProvider;
-    private wallet: ethers.Wallet;
-    private flashLoanContract: ethers.Contract;
-    private executionMode: 'simulation' | 'live';
+// ArbitrageBot.sol deployed addresses
+const CONTRACT_ADDRESSES: Record<string, string> = {
+  avalanche: "",
+  arbitrum:  "0x818D057F20A6aC398046444e156981B2d9FD500C",
+  optimism:  "",
+};
 
-    constructor() {
-      this.provider = new ethers.JsonRpcProvider(
-        process.env.ARBITRUM_RPC || 'https://arb1.arbitrum.io/rpc'
-      );
+// USDT token addresses per network
+const USDT_ADDRESSES: Record<string, string> = {
+  avalanche: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
+  arbitrum:  "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+  optimism:  "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+};
 
-      this.wallet = new ethers.Wallet(
-        process.env.PRIVATE_KEY!,
-        this.provider
-      );
+// WBTC token addresses per network
+const WBTC_ADDRESSES: Record<string, string> = {
+  avalanche: "0x50b7545627a5162F82A992c33b87aDc75187B218",
+  arbitrum:  "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+  optimism:  "0x68f180fcCe6836688e9084f035309E29Bf0A2095",
+};
 
-      // ←←← UPDATE THIS WITH YOUR DEPLOYED CONTRACT ADDRESS ←←←
-      const CONTRACT_ADDRESS = process.env.FLASH_LOAN_CONTRACT || "0xYourDeployedContractAddressHere";
+// Public RPC endpoints per network
+const RPC_URLS: Record<string, string> = {
+  avalanche: "https://api.avax.network/ext/bc/C/rpc",
+  arbitrum:  "https://arb1.arbitrum.io/rpc",
+  optimism:  "https://mainnet.optimism.io",
+};
 
-      this.flashLoanContract = new ethers.Contract(
-        CONTRACT_ADDRESS,
-        FLASH_LOAN_ABI,
-        this.wallet
-      );
-
-      this.executionMode = (process.env.EXECUTION_MODE as 'simulation' | 'live') || 'live';
-
-      console.log(`🔧 FlashLoanExecutor initialized in ${this.executionMode.toUpperCase()} mode`);
-    }
-
-    public async execute(opportunity: ExecutionOpportunity, config: ExecutionConfig): Promise<ExecutionResult> {
-      const deadline = Math.floor(Date.now() / 1000) + DEADLINE_BUFFER_SECONDS;
-
-      console.log(`📈 Executing opportunity: ${opportunity.tokenIn} → ${opportunity.tokenOut} | Expected profit: ${opportunity.expectedProfit}`);
-
-      try {
-        if (this.executionMode === 'live') {
-          return await this.executeLive(opportunity, deadline, config);
-        } else {
-          return await this.executeSimulation(opportunity);
-        }
-      } catch (error: any) {
-        console.error("❌ Execution failed:", error.message);
-        return {
-          success: false,
-          profit: 0,
-          error: error.message,
-          txHash: null
-        };
-      }
-    }
-
-    private async executeLive(
-      opportunity: ExecutionOpportunity,
-      deadline: number,
-      config: ExecutionConfig
-    ): Promise<ExecutionResult> {
-      console.log(`🚀 SENDING LIVE TRANSACTION on Arbitrum...`);
-
-      const tx = await this.flashLoanContract.executeArbitrage(
-        opportunity.path,
-        opportunity.amount,
-        opportunity.minProfit || ethers.parseUnits("0.5", 6), // 0.5 USDC minimum example
-        deadline,
-        {
-          gasLimit: 1_200_000,           // Generous gas limit for multi-hop
-          maxFeePerGas: ethers.parseUnits("0.5", "gwei"),
-          maxPriorityFeePerGas: ethers.parseUnits("0.1", "gwei"),
-        }
-      );
-
-      console.log(`📤 Transaction sent: ${tx.hash}`);
-
-      const receipt = await tx.wait(1); // Wait for 1 confirmation
-
-      const profit = this.calculateRealProfit(receipt); // Implement based on logs if needed
-
-      return {
-        success: true,
-        profit: Number(ethers.formatUnits(profit || 0, 6)),
-        txHash: tx.hash,
-        blockNumber: receipt.blockNumber
-      };
-    }
-
-    private async executeSimulation(opportunity: ExecutionOpportunity): Promise<ExecutionResult> {
-      console.log(`🧪 SIMULATION MODE - Opportunity would be executed`);
-
-      // More realistic simulation
-      const success = Math.random() > 0.08; // \~92% success rate in sim
-
-      return {
-        success,
-        profit: success ? Number(opportunity.expectedProfit) * 0.92 : 0,
-        txHash: `0xSIM_${Date.now()}`,
-        error: success ? undefined : "Simulated failure"
-      };
-    }
-
-    private calculateRealProfit(receipt: any): bigint {
-      // TODO: Parse Transfer events or custom Profit event from contract
-      // For now return a placeholder
-      return BigInt(0);
-    }
-
-    // Helper to verify routing on-chain
-    public async verifyRouting(path: string[]): Promise<boolean> {
-      try {
-        // You can add on-chain checks here if your contract exposes them
-        console.log(`✅ Routing verified for path: ${path.join(' → ')}`);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-  }
-
-  // Export singleton
-  export const flashLoanExecutor = new FlashLoanExecutor();  // Avalanche (deployed IDs 0-3)
+// DEX name → uint8 ID registered in deploy.js
+const DEX_ID: Record<string, number> = {
+  // Avalanche (deployed IDs 0-3)
   "Trader Joe V2.1": 0,
   "Pangolin":        1,
   "SushiSwap":       2,
