@@ -147,9 +147,8 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
   }
 
   metroProcess = spawn(
-    "pnpm",
+    "npx",
     [
-      "exec",
       "expo",
       "start",
       "--no-dev",
