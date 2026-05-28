@@ -1,6 +1,6 @@
 # ArbitrageBot.sol — Deployment Guide
 
-Flash-loan arbitrage contract for WBTC/USDT across Aave V3 + multi-DEX on Arbitrum.
+Flash-loan arbitrage contract for WBTC/USDT across Aave V3 + 13 DEXs on Avalanche, Arbitrum, and Optimism.
 
 ## Architecture
 
@@ -24,106 +24,92 @@ Surplus USDT stays in the contract. Call `withdraw()` to collect profits.
 
 | dexType | Protocol              | Used by                                    |
 |---------|-----------------------|--------------------------------------------|
-| 0       | Uniswap V3            | PancakeSwap V3, Uniswap V3 (Arbitrum)      |
-| 1       | Uniswap V2-compatible | SushiSwap (Arbitrum)                       |
+| 0       | Uniswap V3            | Uniswap V3 (Arbitrum, Optimism)            |
+| 1       | Uniswap V2-compatible | Pangolin (Avalanche), SushiSwap (Avalanche, Arbitrum) |
 | 2       | Trader Joe V2.1       | Trader Joe V2.1 (Avalanche)                |
-| 3       | Balancer V2           | Balancer V2 (Arbitrum), Beethoven X        |
+| 3       | Balancer V2           | Balancer V2 (Arbitrum), Beethoven X (Optimism) |
 | 4       | Velodrome V2          | Velodrome V2 (Optimism)                    |
+| 5       | Curve                 | Curve (Optimism)                           |
+| 6       | GMX                   | GMX (Avalanche, Arbitrum)                  |
 | 7       | Camelot V3            | Camelot V3 (Arbitrum)                      |
-
-## Arbitrum DEX IDs
-
-| dexId | DEX            | Router Address                                      | Type |
-|-------|----------------|-----------------------------------------------------|------|
-| 0     | PancakeSwap V3 | 0x1A1f72651F34782990d2fDb087a9235630F73569         | V3   |
-| 1     | Uniswap V3     | 0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45         | V3   |
-| 2     | SushiSwap      | 0x1b02dA8Cb0d097eB8D57A175b8897D913111F124         | V2   |
-| 3     | Camelot V3     | 0xc7DD1dD2E5B14f51c08a9A7418E3595566Bb0932         | V3   |
 
 ## Prerequisites
 
-1. Foundry (for compiling Solidity)
-2. Node.js 18+ (for deployment)
-3. Private key with ETH on Arbitrum
-
-### Install Foundry
+### Compile with Foundry (recommended)
 
 ```bash
+# Install Foundry
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
+
+# From the project root
+forge build contracts/ArbitrageBot.sol --out contracts/out
 ```
 
-### Compile Contract
+### Or compile with solc directly
 
 ```bash
-forge build contracts/ArbitrageBot.sol --out contracts/out
+solc --bin --abi --optimize --optimize-runs 200 \
+     -o contracts/out/ArbitrageBot.sol/ \
+     contracts/ArbitrageBot.sol
 ```
 
 ## Deploy
 
 ```bash
-# Set your private key
-export PRIVATE_KEY=0x...
+# Install deploy script dependency
+npm install ethers@6
 
 # Deploy to Arbitrum
-NETWORK=arbitrum node contracts/deploy.js
+PRIVATE_KEY=0x... NETWORK=arbitrum node contracts/deploy.js
+
+# Deploy to Avalanche
+PRIVATE_KEY=0x... NETWORK=avalanche node contracts/deploy.js
+
+# Deploy to Optimism
+PRIVATE_KEY=0x... NETWORK=optimism node contracts/deploy.js
 ```
 
-The deploy script will:
-1. Deploy the contract to Arbitrum
-2. Configure all DEX routers automatically
-3. Print the contract address
+The script deploys the contract and automatically calls `setDexConfig` for each of the DEXs on that network.
 
-## Post-Deploy Setup
+## Post-deploy wiring
 
-### 1. Update Contract Address
+1. **Paste the printed contract address** into `artifacts/api-server/src/services/flashLoanExecutor.ts`:
+   ```ts
+   const CONTRACT_ADDRESSES: Record<string, string> = {
+     arbitrum: "0xYourDeployedAddress",
+     // ...
+   };
+   ```
 
-Add the deployed contract address to `artifacts/api-server/src/services/flashLoanExecutor.ts`:
+2. **Fund the contract with native gas** (only required when `gasSource = "contract"`):
+   ```bash
+   # Arbitrum example
+   cast send 0xYourContract --value 0.005ether --private-key $PRIVATE_KEY \
+     --rpc-url https://arb1.arbitrum.io/rpc
+   ```
+   When `gasSource = "flashloan"` the gas fee is covered by the flash loan surplus — no pre-funding needed.
 
-```typescript
-const CONTRACT_ADDRESSES: Record<string, string> = {
-  arbitrum: "0xYOUR_DEPLOYED_ADDRESS",
-};
-```
+3. **Uncomment the live execution block** in `flashLoanExecutor.ts` (lines marked `// import { ethers }...`).
 
-### 2. Configure Environment Variables
-
-Add to your `.env` file or environment:
-
-```
-PRIVATE_KEY=0x...your_private_key...
-```
-
-### 3. Run the Bot
-
-```bash
-pnpm --filter api-server run dev
-```
-
-Navigate to the web interface and:
-1. Go to Settings
-2. Enter your wallet private key
-3. Configure gas source (flashloan or contract)
-4. Set minimum profit percentage
-5. Select networks (arbitrum)
-6. Start the bot
-
-## Gas Estimates
+## Gas estimates
 
 | Network   | Estimated gas units | Typical gas price | Estimated cost |
 |-----------|--------------------:|------------------:|---------------:|
-| Arbitrum  | 800,000             | 0.1 gwei          | ~$0.25         |
+| Avalanche | 400,000             | 30 gwei           | ~$0.42         |
+| Arbitrum  | 800,000             | 0.1 gwei          | ~$0.19         |
+| Optimism  | 600,000             | 0.001 gwei        | ~$0.001        |
 
-## Security Notes
+## Security notes
 
-- Only the **owner** can call `initiateArbitrage()` and `setDexConfig()`
-- The Aave callback reverts if called by anyone other than Aave Pool
-- Every swap leg carries a `deadline` - transaction reverts if block timestamp exceeds it
-- `minProfit` is enforced on-chain - transaction reverts with `InsufficientProfit` if net return falls below threshold
-- `ReentrancyGuard` applied to `initiateArbitrage()`
-- No external dependencies - OpenZeppelin guards inlined
+- Only the **owner** can call `initiateArbitrage()` and `setDexConfig()`.
+- The Aave callback (`executeOperation`) reverts if called by anyone other than the Aave Pool or by any initiator other than the contract itself — preventing flash loan griefing.
+- Every swap leg carries a `deadline` — if the block timestamp exceeds it the whole transaction reverts, preventing frontrunning via delayed inclusion.
+- `minProfit` is enforced on-chain; the transaction reverts with `InsufficientProfit` if the net return falls below the threshold, so a bad price move cannot drain the contract.
+- `ReentrancyGuard` is applied to `initiateArbitrage()`.
+- No external dependencies — OpenZeppelin guards are inlined to keep the deploy self-contained.
 
-## Owner Functions
+## Owner functions
 
 | Function | Description |
 |---|---|
@@ -133,27 +119,17 @@ Navigate to the web interface and:
 | `withdrawNative(to)` | Pull any accidentally-sent native tokens |
 | `transferOwnership(newOwner)` | Hand off ownership |
 
-## ArbParams Reference
+## ArbParams reference
 
 | Field | Type | Description |
 |---|---|---|
-| `buyDexId` | uint8 | DEX ID to buy WBTC on (0=PancakeSwap, 1=Uniswap, 2=SushiSwap, 3=Camelot) |
+| `buyDexId` | uint8 | DEX ID to buy WBTC on (see deploy.js for mappings) |
 | `sellDexId` | uint8 | DEX ID to sell WBTC on |
-| `tokenBorrow` | address | USDT address: 0xFd086bC7CD5C481DCC9C85fE04213A929da48929 |
-| `tokenBuy` | address | WBTC address: 0x2f2a2543B76A4166567F48F5b3b2F4F6627F35D9 |
-| `loanAmount` | uint256 | USDT loan in token units (10000 * 10^6 = 10,000 USDT) |
+| `tokenBorrow` | address | USDT address on this network |
+| `tokenBuy` | address | WBTC address on this network |
+| `loanAmount` | uint256 | USDT loan in token units (1000 × 10^6 = 1,000 USDT) |
 | `minProfit` | uint256 | Minimum net profit in USDT token units before tx reverts |
 | `deadline` | uint256 | Unix timestamp — revert if inclusion is too late |
 | `hops` | uint8 | 1 = direct swap, 2 = via intermediate token |
 | `hopDexId` | uint8 | DEX ID for the middle hop (2-hop only) |
 | `hopToken` | address | Intermediate token address (2-hop only) |
-
-## Live Contract on Arbitrum
-
-A contract is already deployed at: `0x88379b60dAbaC8759d2577E52f0aB74D731724F9`
-
-This contract has DEXs pre-configured for:
-- PancakeSwap V3 (dexId 0)
-- Uniswap V3 (dexId 1)
-- SushiSwap (dexId 2)
-- Camelot V3 (dexId 3)
