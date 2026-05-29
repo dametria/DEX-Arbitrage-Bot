@@ -1,179 +1,30 @@
-        // SPDX-License-Identifier: MIT
-        pragma solidity 0.8.24;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.24;
 
-        import "@aave/core-v3/contracts/flashloan/base/FlashLoanSimpleReceiverBase.sol";
-        import "@aave/core-v3/contracts/interfaces/IPoolAddressesProvider.sol";
-        import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-        import "@openzeppelin/contracts/access/Ownable.sol";
+// ─────────────────────────────── ReentrancyGuard ─────────────────────────────
 
-        /**
-         * @title FlashLoanArbitrage
-         * @dev Advanced flash loan arbitrage bot supporting multiple DEXes on Arbitrum
-         */
-        contract FlashLoanArbitrage is FlashLoanSimpleReceiverBase, Ownable {
+abstract contract ReentrancyGuard {
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED     = 2;
+    uint256 private _status = _NOT_ENTERED;
 
-            // ============== STRUCTS ==============
-            struct DexConfig {
-                address router;
-                uint24 fee;           // Used for Uniswap V3 style pools
-                bool active;
-            }
+    modifier nonReentrant() {
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+        _status = _ENTERED;
+        _;
+        _status = _NOT_ENTERED;
+    }
+}
 
-            // ============== STATE ==============
-            mapping(string => DexConfig) public dexConfigs;
-            uint256 public constant MIN_PROFIT_THRESHOLD = 1e6; // e.g., 1 USDC
+// ─────────────────────────────── Ownable ─────────────────────────────────────
 
-            // Events
-            event ArbitrageExecuted(
-                address indexed tokenIn,
-                address indexed tokenOut,
-                uint256 amount,
-                uint256 profit,
-                uint256 timestamp
-            );
+abstract contract Ownable {
+    address private _owner;
 
-            event DexConfigured(string name, address router);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-            // ============== CONSTRUCTOR ==============
-            constructor(address _addressProvider)
-                FlashLoanSimpleReceiverBase(IPoolAddressesProvider(_addressProvider))
-                Ownable(msg.sender)
-            {}
-
-            // ============== DEX CONFIG ==============
-            function setDexConfig(
-                string calldata name,
-                address router,
-                uint24 fee
-            ) external onlyOwner {
-                require(router != address(0), "Invalid router");
-                dexConfigs[name] = DexConfig(router, fee, true);
-                emit DexConfigured(name, router);
-            }
-
-            function getDexRouter(string calldata name) external view returns (address) {
-                return dexConfigs[name].router;
-            }
-
-            // ============== MAIN EXECUTION ==============
-            /**
-             * @notice Executes flash loan arbitrage
-             * @param path Token path for the trade (e.g., [USDC, WETH, USDC])
-             * @param amount Flash loan amount (in smallest unit)
-             * @param minProfit Minimum profit required (in smallest unit)
-             * @param deadline Timestamp deadline
-             */
-            function executeArbitrage(
-                address[] calldata path,
-                uint256 amount,
-                uint256 minProfit,
-                uint256 deadline
-            ) external onlyOwner returns (bool) {
-                require(path.length >= 2, "Invalid path");
-                require(block.timestamp <= deadline, "Deadline expired");
-                require(amount > 0, "Amount must be > 0");
-
-                // Request flash loan from Aave
-                POOL.flashLoanSimple(
-                    address(this),
-                    path[0],           // Asset to borrow
-                    amount,
-                    abi.encode(path, minProfit, deadline),
-                    0
-                );
-
-                return true;
-            }
-
-            /**
-             * @dev Aave callback - this is where the arbitrage logic runs
-             */
-            function executeOperation(
-                address asset,
-                uint256 amount,
-                uint256 premium,
-                address initiator,
-                bytes calldata params
-            ) external override returns (bool) {
-                require(msg.sender == address(POOL), "Caller must be Aave Pool");
-                require(initiator == address(this), "Invalid initiator");
-
-                (address[] memory path, uint256 minProfit, uint256 deadline) = 
-                    abi.decode(params, (address[], uint256, uint256));
-
-                uint256 balanceBefore = IERC20(asset).balanceOf(address(this));
-
-                // Perform multi-hop swaps across DEXes
-                _performArbitrageSwaps(path, amount, deadline);
-
-                uint256 balanceAfter = IERC20(asset).balanceOf(address(this));
-                uint256 totalDebt = amount + premium;
-
-                uint256 profit = balanceAfter > totalDebt ? balanceAfter - totalDebt : 0;
-
-                require(profit >= minProfit, "Insufficient profit");
-                require(profit >= MIN_PROFIT_THRESHOLD, "Below minimum threshold");
-
-                // Approve Aave to pull back the flash loan + premium
-                IERC20(asset).approve(address(POOL), totalDebt);
-
-                emit ArbitrageExecuted(path[0], path[path.length-1], amount, profit, block.timestamp);
-
-                return true;
-            }
-
-            function _performArbitrageSwaps(
-                address[] memory path,
-                uint256 amountIn,
-                uint256 deadline
-            ) internal {
-                uint256 currentAmount = amountIn;
-
-                for (uint256 i = 0; i < path.length - 1; i++) {
-                    address tokenIn = path[i];
-                    address tokenOut = path[i + 1];
-
-                    // Choose best DEX (you can make this dynamic based on opportunity)
-                    string memory bestDex = _selectDexForPair(tokenIn, tokenOut);
-                    DexConfig memory dex = dexConfigs[bestDex];
-
-                    require(dex.active && dex.router != address(0), "DEX not configured");
-
-                    IERC20(tokenIn).approve(dex.router, currentAmount);
-
-                    // Example for Uniswap V2 style routers (adapt for V3 if needed)
-                    address[] memory swapPath = new address[](2);
-                    swapPath[0] = tokenIn;
-                    swapPath[1] = tokenOut;
-
-                    uint256[] memory amounts = IUniswapV2Router(dex.router).swapExactTokensForTokens(
-                        currentAmount,
-                        0, // Accept any output (slippage controlled off-chain)
-                        swapPath,
-                        address(this),
-                        deadline
-                    );
-
-                    currentAmount = amounts[amounts.length - 1];
-                }
-            }
-
-            function _selectDexForPair(address tokenIn, address tokenOut) internal pure returns (string memory) {
-                // Simple logic - extend with on-chain price checks if desired
-                return "uniswap"; // Default to Uniswap, make dynamic in production
-            }
-
-            // ============== UTILITY ==============
-            function withdrawToken(address token, uint256 amount) external onlyOwner {
-                IERC20(token).transfer(owner(), amount);
-            }
-
-            function withdrawETH() external onlyOwner {
-                payable(owner()).transfer(address(this).balance);
-            }
-
-            receive() external payable {}
-        }        require(initialOwner != address(0), "Ownable: zero address");
+    constructor(address initialOwner) {
+        require(initialOwner != address(0), "Ownable: zero address");
         _owner = initialOwner;
         emit OwnershipTransferred(address(0), initialOwner);
     }
@@ -226,7 +77,7 @@ interface IFlashLoanSimpleReceiver {
 
 // ─────────────────────── DEX router interfaces ───────────────────────────────
 
-// ── 0: Uniswap V3 ────────────────────────────────────────────────────────────
+// 0: Uniswap V3
 interface IUniswapV3Router {
     struct ExactInputSingleParams {
         address tokenIn;
@@ -242,7 +93,7 @@ interface IUniswapV3Router {
         external returns (uint256 amountOut);
 }
 
-// ── 1: Uniswap V2-compatible (Pangolin, SushiSwap V2) ────────────────────────
+// 1: Uniswap V2-compatible (Pangolin, SushiSwap V2)
 interface IUniswapV2Router {
     function swapExactTokensForTokens(
         uint256 amountIn,
@@ -253,16 +104,14 @@ interface IUniswapV2Router {
     ) external returns (uint256[] memory amounts);
 }
 
-// ── 2: Trader Joe V2.1 ───────────────────────────────────────────────────────
+// 2: Trader Joe V2.1
 interface ILBRouter {
     enum Version { V1, V2, V2_1 }
-
     struct Path {
         uint256[]   pairBinSteps;
         Version[]   versions;
         address[]   tokenPath;
     }
-
     function swapExactTokensForTokens(
         uint256        amountIn,
         uint256        amountOutMin,
@@ -272,10 +121,9 @@ interface ILBRouter {
     ) external returns (uint256 amountOut);
 }
 
-// ── 3: Balancer V2 / Beethoven X ─────────────────────────────────────────────
+// 3: Balancer V2 / Beethoven X
 interface IBalancerVault {
     enum SwapKind { GIVEN_IN, GIVEN_OUT }
-
     struct SingleSwap {
         bytes32  poolId;
         SwapKind kind;
@@ -284,23 +132,21 @@ interface IBalancerVault {
         uint256  amount;
         bytes    userData;
     }
-
     struct FundManagement {
         address sender;
         bool    fromInternalBalance;
         address payable recipient;
         bool    toInternalBalance;
     }
-
     function swap(
-        SingleSwap    calldata singleSwap,
+        SingleSwap     calldata singleSwap,
         FundManagement calldata funds,
         uint256        limit,
         uint256        deadline
     ) external returns (uint256);
 }
 
-// ── 4: Velodrome V2 ──────────────────────────────────────────────────────────
+// 4: Velodrome V2
 interface IVelodromeRouter {
     struct Route {
         address from;
@@ -308,38 +154,26 @@ interface IVelodromeRouter {
         bool    stable;
         address factory;
     }
-
     function swapExactTokensForTokens(
-        uint256         amountIn,
-        uint256         amountOutMin,
+        uint256          amountIn,
+        uint256          amountOutMin,
         Route[] calldata routes,
         address          to,
         uint256          deadline
     ) external returns (uint256[] memory amounts);
 }
 
-// ── 5: Curve ─────────────────────────────────────────────────────────────────
+// 5: Curve
 interface ICurvePool {
-    // i = index of tokenIn, j = index of tokenOut
-    function exchange(
-        int128  i,
-        int128  j,
-        uint256 dx,
-        uint256 min_dy
-    ) external returns (uint256);
+    function exchange(int128 i, int128 j, uint256 dx, uint256 min_dy) external returns (uint256);
 }
 
-// ── 6: GMX ───────────────────────────────────────────────────────────────────
+// 6: GMX
 interface IGMXRouter {
-    function swap(
-        address[] calldata path,
-        uint256 amountIn,
-        uint256 minOut,
-        address receiver
-    ) external;
+    function swap(address[] calldata path, uint256 amountIn, uint256 minOut, address receiver) external;
 }
 
-// ── 7: Camelot V3 ────────────────────────────────────────────────────────────
+// 7: Camelot V3
 interface ICamelotV3Router {
     struct ExactInputSingleParams {
         address tokenIn;
@@ -356,26 +190,37 @@ interface ICamelotV3Router {
 
 // ─────────────────────────────── Main contract ───────────────────────────────
 
+/**
+ * @title  ArbitrageBot
+ * @notice Flash-loan arbitrage bot (Aave V3) supporting 8 DEX adapters.
+ * @dev    Audit fixes (2026-05-29):
+ *   [FIX-1]  Orphaned Ownable body / stray require outside contract removed.
+ *   [FIX-2]  Ownable constructor properly wraps require inside its own block.
+ *   [FIX-3]  Constructor guards _aavePool != address(0).
+ *   [FIX-4]  setDexConfig validates cfg.router != address(0).
+ *   [FIX-5]  Approval reset to 0 before non-zero approve (USDT compatibility).
+ *   [FIX-6]  IERC20.approve() return value checked in executeOperation.
+ *   [FIX-7]  IERC20.transfer() return value checked in withdraw().
+ *   [FIX-8]  withdrawNative uses call{value} not transfer() (no 2300-gas limit).
+ *   [FIX-9]  withdraw() / withdrawNative() guard against zero recipient.
+ *   [FIX-10] initiateArbitrage() validates tokenBorrow, tokenBuy, loanAmount.
+ */
 contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
-
-    // ── Storage ──────────────────────────────────────────────────────────────
 
     IPool public immutable aavePool;
 
-    // DEX configuration registered by owner
     struct DexConfig {
         address router;
         uint8   dexType;
-        uint24  feeTier;     // V3 fee tier (500 / 3000 / 10000), 0 for non-V3
-        bytes32 balancerPoolId; // Balancer/Beethoven X only
-        int128  curveIndexIn;   // Curve pool index for tokenIn
-        int128  curveIndexOut;  // Curve pool index for tokenOut
-        address veloFactory;    // Velodrome factory address
-        bool    veloStable;     // Velodrome stable pool flag
-        uint256 lbBinStep;      // Trader Joe V2.1 bin step
+        uint24  feeTier;
+        bytes32 balancerPoolId;
+        int128  curveIndexIn;
+        int128  curveIndexOut;
+        address veloFactory;
+        bool    veloStable;
+        uint256 lbBinStep;
     }
 
-    // dexId → config  (set by owner to match the 8-bit IDs sent in params)
     mapping(uint8 => DexConfig) public dexConfigs;
 
     // ── Events ───────────────────────────────────────────────────────────────
@@ -383,8 +228,8 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
     event ArbitrageExecuted(
         uint8   indexed buyDexId,
         uint8   indexed sellDexId,
-        address         tokenBorrow,   // USDT
-        address         tokenBuy,      // WBTC
+        address         tokenBorrow,
+        address         tokenBuy,
         uint256         loanAmount,
         uint256         profit,
         uint256         aavePremium
@@ -402,48 +247,50 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
     error UnknownDexType(uint8 dexType);
     error ZeroBalance();
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ── Constructor ──────────────────────────────────────────────────────────
 
     constructor(address _aavePool, address _owner) Ownable(_owner) {
+        require(_aavePool != address(0), "ArbitrageBot: zero pool address");
         aavePool = IPool(_aavePool);
     }
 
     // ── Owner: register a DEX ────────────────────────────────────────────────
 
     function setDexConfig(uint8 dexId, DexConfig calldata cfg) external onlyOwner {
+        require(cfg.router != address(0), "ArbitrageBot: zero router");
         dexConfigs[dexId] = cfg;
         emit DexConfigSet(dexId, cfg.router, cfg.dexType);
     }
 
-    // ── Entry point ──────────────────────────────────────────────────────────
+    // ── ArbParams ────────────────────────────────────────────────────────────
 
-    // ArbParams — ABI-encoded and passed as `params` to flashLoanSimple,
-    // then forwarded verbatim to executeOperation.
     struct ArbParams {
         uint8   buyDexId;
         uint8   sellDexId;
-        address tokenBorrow;  // USDT
-        address tokenBuy;     // WBTC
-        uint256 loanAmount;   // USDT amount (with token decimals applied off-chain)
-        uint256 minProfit;    // minimum net USDT profit required (with decimals)
-        uint256 deadline;     // unix timestamp; revert if block.timestamp > deadline
-        uint8   hops;         // 1 or 2
-        // 2-hop only:
-        uint8   hopDexId;     // intermediate DEX
-        address hopToken;     // intermediate token
+        address tokenBorrow;
+        address tokenBuy;
+        uint256 loanAmount;
+        uint256 minProfit;
+        uint256 deadline;
+        uint8   hops;
+        uint8   hopDexId;
+        address hopToken;
     }
+
+    // ── Entry point ──────────────────────────────────────────────────────────
 
     function initiateArbitrage(ArbParams calldata p) external onlyOwner nonReentrant {
         if (block.timestamp > p.deadline) revert DeadlineExpired();
-
-        bytes memory encoded = abi.encode(p);
+        require(p.tokenBorrow != address(0), "ArbitrageBot: zero borrow token");
+        require(p.tokenBuy    != address(0), "ArbitrageBot: zero buy token");
+        require(p.loanAmount  > 0,           "ArbitrageBot: zero loan amount");
 
         aavePool.flashLoanSimple(
             address(this),
             p.tokenBorrow,
             p.loanAmount,
-            encoded,
-            0  // referral code
+            abi.encode(p),
+            0
         );
     }
 
@@ -456,8 +303,8 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
         address initiator,
         bytes calldata params
     ) external override returns (bool) {
-        if (msg.sender != address(aavePool))  revert OnlyAavePool();
-        if (initiator  != address(this))      revert OnlyInitiator();
+        if (msg.sender != address(aavePool)) revert OnlyAavePool();
+        if (initiator  != address(this))     revert OnlyInitiator();
 
         ArbParams memory p = abi.decode(params, (ArbParams));
 
@@ -471,17 +318,16 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
             _executeTwoHop(p, amount);
         }
 
-        uint256 usdtAfter = IERC20(asset).balanceOf(address(this));
+        uint256 usdtAfter   = IERC20(asset).balanceOf(address(this));
         uint256 repayAmount = amount + premium;
 
-        // Net profit = balance increase minus the premium we owe Aave
         uint256 grossProfit = usdtAfter > usdtBefore ? usdtAfter - usdtBefore : 0;
-        uint256 netProfit   = grossProfit > premium ? grossProfit - premium : 0;
+        uint256 netProfit   = grossProfit > premium   ? grossProfit - premium  : 0;
 
         if (netProfit < p.minProfit) revert InsufficientProfit(netProfit, p.minProfit);
 
-        // Approve Aave to pull repayment
-        IERC20(asset).approve(address(aavePool), repayAmount);
+        bool approved = IERC20(asset).approve(address(aavePool), repayAmount);
+        require(approved, "ArbitrageBot: Aave repayment approval failed");
 
         emit ArbitrageExecuted(
             p.buyDexId,
@@ -496,59 +342,26 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
         return true;
     }
 
-    // ── Hop executors ─────────────────────────────────────────────────────────
+    // ── Hop executors ────────────────────────────────────────────────────────
 
     function _executeOneHop(ArbParams memory p, uint256 amountIn) internal {
-        // Leg 1: USDT → WBTC on buyDex
         uint256 wbtcReceived = _swap(
-            p.buyDexId,
-            p.tokenBorrow,
-            p.tokenBuy,
-            amountIn,
-            1,            // amountOutMin — slippage guard enforced by minProfit check
-            p.deadline
+            p.buyDexId, p.tokenBorrow, p.tokenBuy, amountIn, 1, p.deadline
         );
-
-        // Leg 2: WBTC → USDT on sellDex
         _swap(
-            p.sellDexId,
-            p.tokenBuy,
-            p.tokenBorrow,
-            wbtcReceived,
-            1,
-            p.deadline
+            p.sellDexId, p.tokenBuy, p.tokenBorrow, wbtcReceived, 1, p.deadline
         );
     }
 
     function _executeTwoHop(ArbParams memory p, uint256 amountIn) internal {
-        // Leg 1: USDT → hopToken on buyDex
         uint256 hopReceived = _swap(
-            p.buyDexId,
-            p.tokenBorrow,
-            p.hopToken,
-            amountIn,
-            1,
-            p.deadline
+            p.buyDexId, p.tokenBorrow, p.hopToken, amountIn, 1, p.deadline
         );
-
-        // Leg 2: hopToken → WBTC on hopDex
         uint256 wbtcReceived = _swap(
-            p.hopDexId,
-            p.hopToken,
-            p.tokenBuy,
-            hopReceived,
-            1,
-            p.deadline
+            p.hopDexId, p.hopToken, p.tokenBuy, hopReceived, 1, p.deadline
         );
-
-        // Leg 3: WBTC → USDT on sellDex
         _swap(
-            p.sellDexId,
-            p.tokenBuy,
-            p.tokenBorrow,
-            wbtcReceived,
-            1,
-            p.deadline
+            p.sellDexId, p.tokenBuy, p.tokenBorrow, wbtcReceived, 1, p.deadline
         );
     }
 
@@ -564,13 +377,14 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
     ) internal returns (uint256 amountOut) {
         DexConfig storage cfg = dexConfigs[dexId];
         address router = cfg.router;
+        require(router != address(0), "ArbitrageBot: DEX not configured");
 
-        // Approve router to spend tokenIn
+        // Reset approval to 0 first (required by USDT and similar non-standard ERC-20s)
+        IERC20(tokenIn).approve(router, 0);
         IERC20(tokenIn).approve(router, amountIn);
 
         uint8 dt = cfg.dexType;
 
-        // ── 0: Uniswap V3 ────────────────────────────────────────────────────
         if (dt == 0) {
             return IUniswapV3Router(router).exactInputSingle(
                 IUniswapV3Router.ExactInputSingleParams({
@@ -586,7 +400,6 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
             );
         }
 
-        // ── 1: Uniswap V2-compatible (Pangolin, SushiSwap V2) ────────────────
         if (dt == 1) {
             address[] memory path = new address[](2);
             path[0] = tokenIn;
@@ -597,11 +410,10 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
             return amounts[amounts.length - 1];
         }
 
-        // ── 2: Trader Joe V2.1 ───────────────────────────────────────────────
         if (dt == 2) {
-            uint256[]   memory binSteps = new uint256[](1);
+            uint256[]           memory binSteps  = new uint256[](1);
             ILBRouter.Version[] memory versions  = new ILBRouter.Version[](1);
-            address[]   memory tokenPath = new address[](2);
+            address[]           memory tokenPath = new address[](2);
             binSteps[0]  = cfg.lbBinStep;
             versions[0]  = ILBRouter.Version.V2_1;
             tokenPath[0] = tokenIn;
@@ -615,7 +427,6 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
             );
         }
 
-        // ── 3: Balancer V2 / Beethoven X ─────────────────────────────────────
         if (dt == 3) {
             return IBalancerVault(router).swap(
                 IBalancerVault.SingleSwap({
@@ -637,7 +448,6 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
             );
         }
 
-        // ── 4: Velodrome V2 ──────────────────────────────────────────────────
         if (dt == 4) {
             IVelodromeRouter.Route[] memory routes = new IVelodromeRouter.Route[](1);
             routes[0] = IVelodromeRouter.Route({
@@ -652,17 +462,12 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
             return amounts[amounts.length - 1];
         }
 
-        // ── 5: Curve ─────────────────────────────────────────────────────────
         if (dt == 5) {
             return ICurvePool(router).exchange(
-                cfg.curveIndexIn,
-                cfg.curveIndexOut,
-                amountIn,
-                amountOutMin
+                cfg.curveIndexIn, cfg.curveIndexOut, amountIn, amountOutMin
             );
         }
 
-        // ── 6: GMX ───────────────────────────────────────────────────────────
         if (dt == 6) {
             uint256 balBefore = IERC20(tokenOut).balanceOf(address(this));
             address[] memory path = new address[](2);
@@ -673,7 +478,6 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
             return balAfter - balBefore;
         }
 
-        // ── 7: Camelot V3 ────────────────────────────────────────────────────
         if (dt == 7) {
             return ICamelotV3Router(router).exactInputSingle(
                 ICamelotV3Router.ExactInputSingleParams({
@@ -693,19 +497,23 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
 
     // ── Owner utilities ──────────────────────────────────────────────────────
 
-    /// @notice Withdraw any ERC-20 accumulated in the contract (profits, etc.)
+    /// @notice Withdraw full ERC-20 balance to `to`
     function withdraw(address token, address to) external onlyOwner {
+        require(to != address(0), "ArbitrageBot: zero recipient");
         uint256 bal = IERC20(token).balanceOf(address(this));
         if (bal == 0) revert ZeroBalance();
-        IERC20(token).transfer(to, bal);
+        bool ok = IERC20(token).transfer(to, bal);
+        require(ok, "ArbitrageBot: transfer failed");
         emit Withdrawn(token, bal, to);
     }
 
-    /// @notice Withdraw native gas token (in case of accidental ETH/AVAX sends)
+    /// @notice Withdraw native gas token (ETH / AVAX / etc.)
     function withdrawNative(address payable to) external onlyOwner {
+        require(to != address(0), "ArbitrageBot: zero recipient");
         uint256 bal = address(this).balance;
         if (bal == 0) revert ZeroBalance();
-        to.transfer(bal);
+        (bool sent, ) = to.call{value: bal}("");
+        require(sent, "ArbitrageBot: native transfer failed");
     }
 
     receive() external payable {}
