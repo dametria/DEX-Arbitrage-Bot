@@ -37,7 +37,7 @@ const AAVE_V3_POOL: Record<string, string> = {
 // ArbitrageBot.sol deployed addresses
 const CONTRACT_ADDRESSES: Record<string, string> = {
   avalanche: "",
-  arbitrum:  "0x818D057F20A6aC398046444e156981B2d9FD500C",
+  arbitrum:  "0xbC002F60060A75101C7407EAc224a72798BFDdD2",
   optimism:  "",
 };
 
