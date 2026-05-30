@@ -59,18 +59,19 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    AsyncStorage.getItem(CONFIG_KEY).then((raw) => {
-      if (raw) {
-        try {
-          const saved = JSON.parse(raw) as Partial<BotConfig>;
-          setConfig((prev) => ({ ...prev, ...saved }));
-          }
-      setIsConfigLoaded(true);  // ADD THIS LINE — fires whether raw exists or not
-    });
-        } catch {}
+  AsyncStorage.getItem(CONFIG_KEY).then((raw) => {
+    if (raw) {
+      try {
+        const saved = JSON.parse(raw) as Partial<BotConfig>;
+        setConfig((prev) => ({ ...prev, ...saved }));
+      } catch (err) {
+        // Optional: log, or just silently ignore bad JSON
+        console.warn("Failed to parse saved bot config", err);
       }
-    });
-  }, []);
+    }
+    setIsConfigLoaded(true);
+  });
+}, []);
 
   const updateConfig = useCallback(async (partial: Partial<BotConfig>) => {
     setConfig((prev) => {
