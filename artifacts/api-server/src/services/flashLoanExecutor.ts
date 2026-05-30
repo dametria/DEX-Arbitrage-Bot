@@ -37,7 +37,7 @@ const AAVE_V3_POOL: Record<string, string> = {
 // ArbitrageBot.sol deployed addresses
 const CONTRACT_ADDRESSES: Record<string, string> = {
   avalanche: "",
-  arbitrum:  "0xbC002F60060A75101C7407EAc224a72798BFDdD2",
+  arbitrum:  "0xb2dbB869E7474edfB49129955EA5C60beEf91648",
   optimism:  "",
 };
 
@@ -64,22 +64,30 @@ const RPC_URLS: Record<string, string> = {
 
 // DEX name → uint8 ID registered in deploy.js
 const DEX_ID: Record<string, number> = {
-  // Avalanche (deployed IDs 0-3)
+  "avalanche:Trader Joe V2.1": 0,
+  "avalanche:Pangolin":        1,
+  "avalanche:SushiSwap":       2,
+  "avalanche:GMX":             3,
+  "arbitrum:Uniswap V3":  0,
+  "arbitrum:SushiSwap":   1,
+  "arbitrum:Camelot V3":  2,
+  "arbitrum:GMX":         3,
+  "arbitrum:Balancer V2": 4,
+  "optimism:Uniswap V3":   0,
+  "optimism:Velodrome V2": 1,
+  "optimism:Beethoven X":  2,
+  "optimism:Curve":        3,
+  // plain-name fallbacks
   "Trader Joe V2.1": 0,
   "Pangolin":        1,
-  "SushiSwap":       2,
   "GMX":             3,
-  // Arbitrum (deployed IDs 0-4)
-  "Uniswap V3":  0,
-  // SushiSwap already 2 for Avalanche; on Arbitrum it's also ID 1
-  "Camelot V3":  2,
-  "Balancer V2": 4,
-  // Optimism (deployed IDs 0-3)
-  "Velodrome V2": 1,
-  "Beethoven X":  2,
-  "Curve":        3,
+  "Uniswap V3":      0,
+  "Camelot V3":      2,
+  "Balancer V2":     4,
+  "Velodrome V2":    1,
+  "Beethoven X":     2,
+  "Curve":           3,
 };
-
 // Per-network SushiSwap DEX ID (different on Avalanche vs Arbitrum)
 const SUSHISWAP_ID: Record<string, number> = {
   avalanche: 2,
@@ -145,6 +153,8 @@ function estimateGas(network: string): GasEstimate {
 
 function resolveDexId(dexName: string, network: string): number {
   if (dexName === "SushiSwap") return SUSHISWAP_ID[network] ?? 2;
+  const qualifiedId = DEX_ID[`${network}:${dexName}`];
+  if (qualifiedId !== undefined) return qualifiedId;
   return DEX_ID[dexName] ?? 0;
 }
 
