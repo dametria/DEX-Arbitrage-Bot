@@ -310,7 +310,7 @@ export default function DashboardScreen() {
         </View>
         <TouchableOpacity
           onPress={handleInitDex}
-          disabled={isIniting || initStatus === "pending"}
+          disabled={isIniting || initStatus === "pending" || !isConfigLoaded}
           style={[
             styles.withdrawBtn,
             {
