@@ -1,8 +1,8 @@
 import { ethers } from "ethers";
 import { logger } from "../lib/logger.js";
 
-const RPC_URL         = "https://arb1.arbitrum.io/rpc";
-const CONTRACT_ADDRESS = "0x818D057F20A6aC398046444e156981B2d9FD500C";
+const RPC_URL = process.env["RPC_URL"] ?? "https://arb1.arbitrum.io/rpc";
+const CONTRACT_ADDRESS = "0xb2dbB869E7474edfB49129955EA5C60beEf91648";
 
 // setDexConfig(uint8 dexId, DexConfig cfg)
 // DexConfig: (address router, uint8 dexType, uint24 feeTier,
