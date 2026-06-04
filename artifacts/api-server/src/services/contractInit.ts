@@ -1,8 +1,8 @@
 import { ethers } from "ethers";
 import { logger } from "../lib/logger.js";
 
-const RPC_URL = process.env["RPC_URL"] ?? "https://arb1.arbitrum.io/rpc";
-const CONTRACT_ADDRESS = "0x28B493c0541EB632f12b5b5AE84bd19031eF992d";
+const RPC_URL         = "https://arb1.arbitrum.io/rpc";
+const CONTRACT_ADDRESS = "0x818D057F20A6aC398046444e156981B2d9FD500C";
 
 // setDexConfig(uint8 dexId, DexConfig cfg)
 // DexConfig: (address router, uint8 dexType, uint24 feeTier,
@@ -70,7 +70,7 @@ const ARBITRUM_DEX_CONFIGS: {
   {
     dexId:   3,
     label:   "GMX",
-    router:  "0xabbc5f99639c9b6bcb58544ddf04165ad37d89e9",
+    router:  "0xaBBc5F99639c9B6bCb58544ddf04165AD37D89e9",
     dexType: 6,
     feeTier: 0,
     balancerPoolId: ethers.ZeroHash,
@@ -116,11 +116,6 @@ export async function initDexConfigs(privateKey: string): Promise<InitResult> {
 
       logger.info({ dexId: dex.dexId, label: dex.label, router: dex.router }, "Setting DEX config");
 
-      const feeData   = await provider.getFeeData();
-      const maxFee    = feeData.maxFeePerGas
-        ? feeData.maxFeePerGas * 130n / 100n
-        : undefined;
-
       const tx = await contract.setDexConfig(
         dex.dexId,
         {
@@ -133,10 +128,6 @@ export async function initDexConfigs(privateKey: string): Promise<InitResult> {
           veloFactory:     ethers.ZeroAddress,
           veloStable:      false,
           lbBinStep:       0n,
-        },
-        {
-          gasLimit: 200_000n,
-          ...(maxFee && { maxFeePerGas: maxFee }),
         },
       );
 

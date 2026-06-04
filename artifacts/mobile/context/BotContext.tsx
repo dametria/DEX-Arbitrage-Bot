@@ -38,7 +38,6 @@ const CONFIG_KEY = "@arb_bot_config";
 interface BotContextValue {
   config: BotConfig;
   updateConfig: (partial: Partial<BotConfig>) => Promise<void>;
-  isConfigLoaded: boolean; 
   isRunning: boolean;
   isStarting: boolean;
   isStopping: boolean;
@@ -54,24 +53,19 @@ const BotContext = createContext<BotContextValue | null>(null);
 
 export function BotProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<BotConfig>(DEFAULT_CONFIG);
-  const [isConfigLoaded, setIsConfigLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
-  AsyncStorage.getItem(CONFIG_KEY).then((raw) => {
-    if (raw) {
-      try {
-        const saved = JSON.parse(raw) as Partial<BotConfig>;
-        setConfig((prev) => ({ ...prev, ...saved }));
-      } catch (err) {
-        // Optional: log, or just silently ignore bad JSON
-        console.warn("Failed to parse saved bot config", err);
+    AsyncStorage.getItem(CONFIG_KEY).then((raw) => {
+      if (raw) {
+        try {
+          const saved = JSON.parse(raw) as Partial<BotConfig>;
+          setConfig((prev) => ({ ...prev, ...saved }));
+        } catch {}
       }
-    }
-    setIsConfigLoaded(true);
-  });
-}, []);
+    });
+  }, []);
 
   const updateConfig = useCallback(async (partial: Partial<BotConfig>) => {
     setConfig((prev) => {
@@ -156,7 +150,6 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       value={{
         config,
         updateConfig,
-        isConfigLoaded,  
         isRunning,
         isStarting: startMutation.isPending,
         isStopping: stopMutation.isPending,

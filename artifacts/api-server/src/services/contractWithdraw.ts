@@ -3,7 +3,7 @@ import { logger } from "../lib/logger.js";
 
 const CONTRACT_ADDRESSES: Record<string, string> = {
   avalanche: "",
-  arbitrum:  "0x28B493c0541EB632f12b5b5AE84bd19031eF992d",
+  arbitrum:  "0x818D057F20A6aC398046444e156981B2d9FD500C",
   optimism:  "",
 };
 
