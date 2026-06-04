@@ -409,6 +409,9 @@ export function getBotStatus() {
     pendingOpportunities: state.currentOpportunities.filter((o) => o.status === "pending").length,
   };
 }
+const safeConfig = { ...config };
+delete safeConfig.privateKey;
+res.json({ running: true, config: safeConfig, stats, ...});
 
 export function getCurrentOpportunities(): ArbitrageOpportunity[] {
   return state.currentOpportunities;
