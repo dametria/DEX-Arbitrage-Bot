@@ -60,3 +60,4 @@ Thumbs.db
 
 # Keep example file visible
 !.env.example
+.env

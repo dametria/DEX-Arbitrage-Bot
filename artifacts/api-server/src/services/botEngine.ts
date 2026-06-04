@@ -138,6 +138,13 @@ async function scanAndExecute(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ err }, "Bot scan/execute cycle failed");
     state.error = msg;
+    if (msg.includes("Stuck nonce detected")) {
+      logger.warn(
+        "ACTION REQUIRED: A stuck transaction is blocking all execution. " +
+        "Send a 0-ETH self-transfer to your own address at the stuck nonce " +
+        "with a higher maxFeePerGas to clear it (use Arbiscan or MetaMask activity).",
+      );
+    }
   } finally {
     activeExecutions = Math.max(0, activeExecutions - 1);
   }

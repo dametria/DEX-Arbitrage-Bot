@@ -71,7 +71,7 @@ const DEX_ID: Record<string, number> = {
   "arbitrum:Uniswap V3":  0,
   "arbitrum:SushiSwap":   1,
   "arbitrum:Camelot V3":  2,
-  "arbitrum:GMX":         3,
+  "arbitrum:GMX":         3,   // GMX V2 ExchangeRouter — V1 permanently disabled July 2025
   "arbitrum:Balancer V2": 4,
   "optimism:Uniswap V3":   0,
   "optimism:Velodrome V2": 1,
@@ -213,10 +213,36 @@ export async function executeFlashLoan(
     const loanAmountRaw = ethers.parseUnits(String(FLASH_LOAN_AMOUNT_USDT), LOAN_DECIMALS);
     const minProfitRaw  = ethers.parseUnits(MIN_PROFIT_USD, LOAN_DECIMALS);
 
-    const feeData    = await provider.getFeeData();
-    const gasPrice   = feeData.gasPrice != null
-      ? feeData.gasPrice * 110n / 100n  // +10% bump to beat competing txs
-      : undefined;
+    // ── Nonce guard: detect stuck pending transactions ──────────────────────
+    const [feeData, pendingNonce, confirmedNonce] = await Promise.all([
+      provider.getFeeData(),
+      provider.getTransactionCount(wallet.address, "pending"),
+      provider.getTransactionCount(wallet.address, "latest"),
+    ]);
+
+    if (pendingNonce > confirmedNonce) {
+      const stuckMsg =
+        `Stuck nonce detected: pending=${pendingNonce}, confirmed=${confirmedNonce}. ` +
+        `Send a 0-ETH self-transfer to your own address at nonce ${confirmedNonce} ` +
+        `with maxFeePerGas > current to clear the queue.`;
+      logger.warn({ pendingNonce, confirmedNonce }, stuckMsg);
+      return {
+        id: generateId(),
+        buyDex: opp.buyDex, sellDex: opp.sellDex,
+        network: opp.network,
+        buyPrice: opp.buyPrice, sellPrice: opp.sellPrice,
+        loanAmount: FLASH_LOAN_AMOUNT_USDT,
+        profit: 0, profitPct: 0,
+        gasCost: 0, gasSource: config.gasSource,
+        txHash: undefined, status: "failed", executedAt,
+        errorMessage: stuckMsg,
+      };
+    }
+
+    // ── EIP-1559 fee calculation with 30% buffer for Arbitrum sequencer ──────
+    const maxPriorityFee = feeData.maxPriorityFeePerGas ?? 100_000_000n; // 0.1 gwei floor
+    const baseFee        = feeData.lastBaseFeePerGas    ?? 100_000_000n;
+    const maxFeePerGas   = (baseFee + maxPriorityFee) * 130n / 100n;     // +30% buffer
 
     logger.info(
       {
@@ -226,6 +252,8 @@ export async function executeFlashLoan(
         sellDexId: resolveDexId(opp.sellDex, opp.network),
         loanAmount: FLASH_LOAN_AMOUNT_USDT,
         deadline,
+        nonce: confirmedNonce,
+        maxFeePerGasGwei: Number(maxFeePerGas) / 1e9,
       },
       "Sending initiateArbitrage transaction",
     );
@@ -243,7 +271,12 @@ export async function executeFlashLoan(
         hopDexId:    0,
         hopToken:    ethers.ZeroAddress,
       },
-      { ...(gasPrice != null && { gasPrice }) },
+      {
+        gasLimit:             1_200_000n,   // explicit limit — prevents silent pending
+        maxFeePerGas,
+        maxPriorityFeePerGas: maxPriorityFee,
+        nonce:                confirmedNonce, // pin to confirmed nonce — no queue stacking
+      },
     );
 
     logger.info({ txHash: tx.hash }, "Transaction submitted — waiting for receipt");
@@ -255,7 +288,7 @@ export async function executeFlashLoan(
       ? parseFloat(
           (
             Number(receipt.gasUsed) *
-            Number(feeData.gasPrice ?? 0n) /
+            Number(maxFeePerGas ?? 0n) /
             1e18 *
             NATIVE_TOKEN_PRICES[opp.network]!
           ).toFixed(4),

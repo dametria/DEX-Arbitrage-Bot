@@ -40,4 +40,4 @@ localPort = 18116
 externalPort = 3002
 
 [nix]
-packages = ["nano", "cargo"]
+packages = ["cargo", "nano", "unzipNLS"]

@@ -116,6 +116,11 @@ export async function initDexConfigs(privateKey: string): Promise<InitResult> {
 
       logger.info({ dexId: dex.dexId, label: dex.label, router: dex.router }, "Setting DEX config");
 
+      const feeData   = await provider.getFeeData();
+      const maxFee    = feeData.maxFeePerGas
+        ? feeData.maxFeePerGas * 130n / 100n
+        : undefined;
+
       const tx = await contract.setDexConfig(
         dex.dexId,
         {
@@ -128,6 +133,10 @@ export async function initDexConfigs(privateKey: string): Promise<InitResult> {
           veloFactory:     ethers.ZeroAddress,
           veloStable:      false,
           lbBinStep:       0n,
+        },
+        {
+          gasLimit: 200_000n,
+          ...(maxFee && { maxFeePerGas: maxFee }),
         },
       );
 

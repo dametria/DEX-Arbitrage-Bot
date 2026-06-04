@@ -154,7 +154,7 @@ const DEX_CONFIGS = {
     {
       id: 3,
       name: "GMX",
-      router:   "0xaBBc5F99639c9B6bCb58544ddf04EFA6802F4064",
+      router:   "0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8", // GMX V2 ExchangeRouter (V1 permanently disabled Jul 2025)
       dexType:  6,   // GMX
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
