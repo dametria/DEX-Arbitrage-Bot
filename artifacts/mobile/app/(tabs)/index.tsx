@@ -31,6 +31,7 @@ export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const bot = useBotContext();
+  const { isConfigLoaded } = bot;
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = React.useState(false);
   const [withdrawStatus, setWithdrawStatus] = React.useState<
@@ -47,12 +48,19 @@ export default function DashboardScreen() {
   const { mutateAsync: initDex, isPending: isIniting } = useInitDexConfigs();
 
   const handleInitDex = async () => {
-    if (!bot.config.privateKey) {
+   if (!isConfigLoaded) {
+     setInitStatus("error");
+     setInitMsg("Configuration still loading — try again");
+     return;
+   } 
+   if (!bot.config.privateKey) {
       setInitStatus("error");
       setInitMsg("Enter your private key in Settings first");
       return;
     }
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await 
+
+Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setInitStatus("pending");
     setInitMsg("");
     try {
@@ -310,7 +318,7 @@ export default function DashboardScreen() {
         </View>
         <TouchableOpacity
           onPress={handleInitDex}
-          disabled={isIniting || initStatus === "pending"}
+          disabled={isIniting || initStatus === "pending" || !isConfigLoaded}
           style={[
             styles.withdrawBtn,
             {
