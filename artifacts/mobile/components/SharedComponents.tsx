@@ -263,6 +263,7 @@ interface TradeCardProps {
   status: string;
   executedAt: string;
   txHash?: string;
+  errorMessage?: string;
 }
 
 export function TradeCard({
@@ -276,6 +277,7 @@ export function TradeCard({
   status,
   executedAt,
   txHash,
+  errorMessage,
 }: TradeCardProps) {
   const colors = useColors();
   const isSuccess = status === "success";
@@ -345,6 +347,14 @@ export function TradeCard({
           </Text>
         )}
       </View>
+      {!isSuccess && errorMessage ? (
+        <Text
+          style={[styles.tradeError, { color: colors.destructive }]}
+          numberOfLines={2}
+        >
+          {errorMessage}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -492,5 +502,11 @@ const styles = StyleSheet.create({
   txHash: {
     fontFamily: "Inter_500Medium",
     fontSize: 11,
+  },
+  tradeError: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    marginTop: 6,
+    lineHeight: 15,
   },
 });

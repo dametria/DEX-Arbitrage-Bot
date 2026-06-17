@@ -39,7 +39,9 @@ export default function TradesScreen() {
   const filtered =
     filter === "all"
       ? trades
-      : trades.filter((t) => t.status === filter);
+      : filter === "failed"
+        ? trades.filter((t) => t.status === "failed" || t.status === "reverted")
+        : trades.filter((t) => t.status === filter);
 
   const totalProfit = trades
     .filter((t) => t.status === "success")
@@ -183,6 +185,7 @@ export default function TradesScreen() {
               status={item.status}
               executedAt={item.executedAt}
               txHash={item.txHash}
+              errorMessage={item.errorMessage}
             />
           )}
           contentContainerStyle={[

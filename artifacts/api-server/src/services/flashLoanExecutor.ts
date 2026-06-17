@@ -240,8 +240,13 @@ export async function executeFlashLoan(
     }
 
     // ── EIP-1559 fee calculation with 30% buffer for Arbitrum sequencer ──────
+    // ethers v6 FeeData has maxFeePerGas and maxPriorityFeePerGas but not lastBaseFeePerGas.
+    // Derive baseFee as maxFeePerGas - maxPriorityFeePerGas (standard EIP-1559 relationship).
     const maxPriorityFee = feeData.maxPriorityFeePerGas ?? 100_000_000n; // 0.1 gwei floor
-    const baseFee        = feeData.lastBaseFeePerGas    ?? 100_000_000n;
+    const rawMaxFee      = feeData.maxFeePerGas         ?? 200_000_000n; // 0.2 gwei floor
+    const baseFee        = rawMaxFee > maxPriorityFee
+      ? rawMaxFee - maxPriorityFee
+      : 100_000_000n;
     const maxFeePerGas   = (baseFee + maxPriorityFee) * 130n / 100n;     // +30% buffer
 
     logger.info(
@@ -267,7 +272,7 @@ export async function executeFlashLoan(
         loanAmount:  loanAmountRaw,
         minProfit:   minProfitRaw,
         deadline:    BigInt(deadline),
-        hops:        opp.hops ?? 1,
+        hops:        1,
         hopDexId:    0,
         hopToken:    ethers.ZeroAddress,
       },

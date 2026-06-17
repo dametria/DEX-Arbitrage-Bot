@@ -70,7 +70,7 @@ const ARBITRUM_DEX_CONFIGS: {
   {
     dexId:   3,
     label:   "GMX",
-    router:  "0xabbc5f99639c9b6bcb58544ddf04165ad37d89e9",
+    router:  "0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8",
     dexType: 6,
     feeTier: 0,
     balancerPoolId: ethers.ZeroHash,
