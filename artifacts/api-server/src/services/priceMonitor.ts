@@ -22,11 +22,12 @@ const DEX_CONFIGS: DexConfig[] = [
   { name: "SushiSwap", geckoTerminalDex: "sushiswap", geckoNetwork: "avax", network: "avalanche" },
   { name: "GMX", geckoTerminalDex: "gmx-avalanche", geckoNetwork: "avax", network: "avalanche" },
   // Arbitrum (min 3 DEXs)
+  // Note: Balancer V2 removed — no liquid WBTC/USDT pool on Arbitrum; GeckoTerminal falls back to
+  // simulated prices for it which generate phantom opportunities that always revert on-chain.
   { name: "Uniswap V3", geckoTerminalDex: "uniswap-v3", geckoNetwork: "arbitrum", network: "arbitrum" },
   { name: "SushiSwap", geckoTerminalDex: "sushiswap-arbitrum", geckoNetwork: "arbitrum", network: "arbitrum" },
   { name: "Camelot V3", geckoTerminalDex: "camelot-v3", geckoNetwork: "arbitrum", network: "arbitrum" },
   { name: "GMX", geckoTerminalDex: "gmx-arbitrum", geckoNetwork: "arbitrum", network: "arbitrum" },
-  { name: "Balancer V2", geckoTerminalDex: "balancer-v2-arbitrum", geckoNetwork: "arbitrum", network: "arbitrum" },
   // Optimism (min 3 DEXs)
   { name: "Uniswap V3", geckoTerminalDex: "uniswap-v3-optimism", geckoNetwork: "optimism", network: "optimism" },
   { name: "Velodrome V2", geckoTerminalDex: "velodrome-v2", geckoNetwork: "optimism", network: "optimism" },

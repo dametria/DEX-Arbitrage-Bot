@@ -34,7 +34,9 @@ const ABI = [
 ];
 
 // Arbitrum DEX routers — one entry per dexId used by initiateArbitrage
-// dexType mirrors the contract's enum: 0=UniV3, 1=UniV2, 3=BalancerV2, 6=GMX, 7=CamelotV3
+// dexType mirrors the contract's enum: 0=UniV3, 1=UniV2, 6=GMX, 7=CamelotV3
+// Balancer V2 (dexId 4) removed: no liquid WBTC/USDT pool exists on Arbitrum Balancer.
+// Uniswap V3 feeTier=500 (0.05%): the main WBTC/USDT pool; the 3000 (0.3%) pool has 275× less liquidity.
 const ARBITRUM_DEX_CONFIGS: {
   dexId: number;
   label: string;
@@ -48,7 +50,7 @@ const ARBITRUM_DEX_CONFIGS: {
     label:   "Uniswap V3",
     router:  "0xE592427A0AEce92De3Edee1F18E0157C05861564",
     dexType: 0,
-    feeTier: 3000,
+    feeTier: 500,
     balancerPoolId: ethers.ZeroHash,
   },
   {
@@ -75,16 +77,6 @@ const ARBITRUM_DEX_CONFIGS: {
     feeTier: 0,
     balancerPoolId: ethers.ZeroHash,
   },
-  {
-    dexId:   4,
-    label:   "Balancer V2",
-    // Balancer Vault is the same on all networks
-    router:  "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
-    dexType: 3,
-    feeTier: 0,
-    // WBTC/USDT ComposableStablePool on Arbitrum Balancer
-    balancerPoolId: "0x64541216bafffeec8ea535bb71fbc927831d0595000000000000000000000002",
-  },
 ];
 
 export interface InitResult {
@@ -106,9 +98,17 @@ export async function initDexConfigs(privateKey: string): Promise<InitResult> {
 
   for (const dex of ARBITRUM_DEX_CONFIGS) {
     try {
-      // Check if already set — skip if router matches
-      const existing = await contract.dexConfigs(dex.dexId) as { router: string };
-      if (existing.router.toLowerCase() === dex.router.toLowerCase()) {
+      // Check if already set — skip only if router, feeTier, AND balancerPoolId all match.
+      // Comparing just the router address misses fee-tier or pool-ID changes.
+      const existing = await contract.dexConfigs(dex.dexId) as {
+        router: string;
+        feeTier: bigint;
+        balancerPoolId: string;
+      };
+      const routerMatch   = existing.router.toLowerCase() === dex.router.toLowerCase();
+      const feeTierMatch  = Number(existing.feeTier) === dex.feeTier;
+      const poolIdMatch   = existing.balancerPoolId.toLowerCase() === dex.balancerPoolId.toLowerCase();
+      if (routerMatch && feeTierMatch && poolIdMatch) {
         logger.info({ dexId: dex.dexId, label: dex.label }, "DEX config already set — skipping");
         alreadySet.push(dex.label);
         continue;
