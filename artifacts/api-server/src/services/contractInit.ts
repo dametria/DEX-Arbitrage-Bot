@@ -34,8 +34,10 @@ const ABI = [
 ];
 
 // Arbitrum DEX routers — one entry per dexId used by initiateArbitrage
-// dexType mirrors the contract's enum: 0=UniV3, 1=UniV2, 6=GMX, 7=CamelotV3
+// dexType mirrors the contract's enum: 0=UniV3, 1=UniV2, 7=CamelotV3
 // Balancer V2 (dexId 4) removed: no liquid WBTC/USDT pool exists on Arbitrum Balancer.
+// GMX (dexId 3) removed: GMX V2 uses an async order/keeper model — incompatible with flash loans.
+//   The ArbitrageBot.sol uses the GMX V1 swap() interface; GMX V1 was permanently disabled July 2025.
 // Uniswap V3 feeTier=500 (0.05%): the main WBTC/USDT pool; the 3000 (0.3%) pool has 275× less liquidity.
 const ARBITRUM_DEX_CONFIGS: {
   dexId: number;
@@ -66,14 +68,6 @@ const ARBITRUM_DEX_CONFIGS: {
     label:   "Camelot V3",
     router:  "0x1F721E2E82F6676FCE4eA07A5958cF098D339e18",
     dexType: 7,
-    feeTier: 0,
-    balancerPoolId: ethers.ZeroHash,
-  },
-  {
-    dexId:   3,
-    label:   "GMX",
-    router:  "0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8",
-    dexType: 6,
     feeTier: 0,
     balancerPoolId: ethers.ZeroHash,
   },

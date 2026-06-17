@@ -1,0 +1,1 @@
+- [Arbitrum DEX compatibility](arbitrum-dex-compat.md) — GMX V2 and Balancer V2 are incompatible with flash loan arbitrage; root causes and investigation trail.

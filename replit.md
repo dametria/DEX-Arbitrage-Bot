@@ -44,8 +44,12 @@ A mobile arbitrage bot that monitors WBTC/USDT price spreads across major DEXs o
 ## DEXs Monitored
 
 - **Avalanche (4):** Trader Joe V2.1, Pangolin, SushiSwap, GMX
-- **Arbitrum (5):** Uniswap V3, SushiSwap, Camelot V3, GMX, Balancer V2
+- **Arbitrum (3):** Uniswap V3 (fee-500), SushiSwap, Camelot V3
 - **Optimism (4):** Uniswap V3, Velodrome V2, Beethoven X, Curve
+
+### Arbitrum DEXs removed and why
+- **GMX** — GMX V2 uses an async order/keeper model (`createOrder`) — incompatible with flash loans which require synchronous execution in one tx. GMX V1's `swap()` interface was permanently disabled July 2025.
+- **Balancer V2** — no liquid WBTC/USDT pool on Arbitrum Balancer (pool ID returns `BAL#500 = NONEXISTENT_POOL`); GeckoTerminal has no real data for it so the price monitor fell back to random simulated prices, generating phantom opportunities that always reverted on-chain.
 
 ## Product
 

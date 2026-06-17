@@ -63,16 +63,15 @@ const RPC_URLS: Record<string, string> = {
 };
 
 // DEX name → uint8 ID registered in deploy.js
+// GMX removed: GMX V2 is async (createOrder/keepers) — incompatible with flash loans.
+// Balancer V2 removed: no liquid WBTC/USDT pool on Arbitrum Balancer.
 const DEX_ID: Record<string, number> = {
   "avalanche:Trader Joe V2.1": 0,
   "avalanche:Pangolin":        1,
   "avalanche:SushiSwap":       2,
-  "avalanche:GMX":             3,
   "arbitrum:Uniswap V3":  0,
   "arbitrum:SushiSwap":   1,
   "arbitrum:Camelot V3":  2,
-  "arbitrum:GMX":         3,   // GMX V2 ExchangeRouter — V1 permanently disabled July 2025
-  "arbitrum:Balancer V2": 4,
   "optimism:Uniswap V3":   0,
   "optimism:Velodrome V2": 1,
   "optimism:Beethoven X":  2,
@@ -80,10 +79,8 @@ const DEX_ID: Record<string, number> = {
   // plain-name fallbacks
   "Trader Joe V2.1": 0,
   "Pangolin":        1,
-  "GMX":             3,
   "Uniswap V3":      0,
   "Camelot V3":      2,
-  "Balancer V2":     4,
   "Velodrome V2":    1,
   "Beethoven X":     2,
   "Curve":           3,

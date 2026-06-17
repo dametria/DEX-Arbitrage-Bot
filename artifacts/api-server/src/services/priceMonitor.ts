@@ -24,10 +24,12 @@ const DEX_CONFIGS: DexConfig[] = [
   // Arbitrum (min 3 DEXs)
   // Note: Balancer V2 removed — no liquid WBTC/USDT pool on Arbitrum; GeckoTerminal falls back to
   // simulated prices for it which generate phantom opportunities that always revert on-chain.
+  // Note: GMX removed — GMX V2 uses an async order/keeper model (createOrder), not a synchronous
+  // swap(). Flash loans require all swaps in one tx; GMX V2 is fundamentally incompatible.
+  // The ArbitrageBot.sol uses the GMX V1 swap() interface which no longer exists on-chain.
   { name: "Uniswap V3", geckoTerminalDex: "uniswap-v3", geckoNetwork: "arbitrum", network: "arbitrum" },
   { name: "SushiSwap", geckoTerminalDex: "sushiswap-arbitrum", geckoNetwork: "arbitrum", network: "arbitrum" },
   { name: "Camelot V3", geckoTerminalDex: "camelot-v3", geckoNetwork: "arbitrum", network: "arbitrum" },
-  { name: "GMX", geckoTerminalDex: "gmx-arbitrum", geckoNetwork: "arbitrum", network: "arbitrum" },
   // Optimism (min 3 DEXs)
   { name: "Uniswap V3", geckoTerminalDex: "uniswap-v3-optimism", geckoNetwork: "optimism", network: "optimism" },
   { name: "Velodrome V2", geckoTerminalDex: "velodrome-v2", geckoNetwork: "optimism", network: "optimism" },
