@@ -383,7 +383,7 @@ Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               withdrawStatus === "error"   ? colors.destructive :
               colors.mutedForeground
             }]}>
-              {withdrawStatus === "idle"    ? `Contract: 0x818D...500C on ${bot.config.networks[0] ?? "arbitrum"}` :
+              {withdrawStatus === "idle"    ? `Contract: 0x28B4...f992d on ${bot.config.networks[0] ?? "arbitrum"}` :
                withdrawStatus === "pending" ? "Sending transaction…" :
                withdrawStatus === "success" ? `✓ ${withdrawMsg}` :
                `✗ ${withdrawMsg}`}
