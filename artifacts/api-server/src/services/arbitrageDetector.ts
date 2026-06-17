@@ -16,10 +16,30 @@ export interface ArbitrageOpportunity {
 
 const FLASH_LOAN_AMOUNT = 10_000;
 const AAVE_FLASH_FEE_PCT = 0.0005;
-// Realistic price impact for a $1,000 swap against multi-million-dollar DEX liquidity
-// is typically <0.05% per leg. SLIPPAGE_TOLERANCE (1%) is a max safety parameter,
-// not the expected execution cost. We model 0.1% total impact across both legs.
+// Realistic price impact for a $10,000 swap. WBTC pools are deep but not infinite.
+// Model 0.05% per leg (0.1% round-trip) as expected execution slippage.
 const EXPECTED_PRICE_IMPACT_PCT = 0.001;
+
+// Trading fee charged by each DEX (taken from amountIn before swap).
+// These are real fees paid to LPs on every swap — they are NOT optional.
+// A trade is only profitable if spread > buyFee + sellFee + aaveFee + slippage + gas.
+const DEX_TRADE_FEE_PCT: Record<string, number> = {
+  // Arbitrum
+  "Uniswap V3":  0.0005,   // fee-500 = 0.05%
+  "SushiSwap":   0.003,    // UniV2 = 0.30%
+  "Camelot V3":  0.0005,   // V3-style ≈ 0.05%
+  // Avalanche
+  "Trader Joe V2.1": 0.002, // LB V2.1 typical bin fee ≈ 0.20%
+  "Pangolin":    0.003,    // UniV2 fork = 0.30%
+  // Optimism
+  "Velodrome V2": 0.002,   // volatile pools = 0.20%
+  "Beethoven X":  0.003,   // Balancer-style ≈ 0.30%
+  "Curve":        0.0004,  // Curve stable = 0.04%
+};
+
+function getDexFeePct(dexName: string): number {
+  return DEX_TRADE_FEE_PCT[dexName] ?? 0.003; // default to 0.30% if unknown
+}
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
@@ -39,13 +59,23 @@ function estimateProfit(
   sellPrice: number,
   loanAmount: number,
   network: string,
+  buyDex: string,
+  sellDex: string,
 ): { net: number; gross: number } {
   const wbtcAmount = loanAmount / buyPrice;
   const grossProceeds = wbtcAmount * sellPrice;
-  const aaveFee = loanAmount * AAVE_FLASH_FEE_PCT;
+
+  const aaveFee      = loanAmount * AAVE_FLASH_FEE_PCT;
   const slippageCost = loanAmount * EXPECTED_PRICE_IMPACT_PCT;
-  const gasCost = estimateGasCostUsd(network);
-  const net = grossProceeds - loanAmount - aaveFee - slippageCost - gasCost;
+  const gasCost      = estimateGasCostUsd(network);
+
+  // DEX trading fees are paid from the swap amounts, not additional charges.
+  // Approximate: buyFee reduces effective USDT going into the swap,
+  // sellFee reduces effective WBTC going into the sell leg.
+  const buyFeeCost  = loanAmount * getDexFeePct(buyDex);
+  const sellFeeCost = loanAmount * getDexFeePct(sellDex);
+
+  const net = grossProceeds - loanAmount - aaveFee - slippageCost - gasCost - buyFeeCost - sellFeeCost;
   const gross = grossProceeds - loanAmount;
   return { net, gross };
 }
@@ -86,6 +116,8 @@ export function detectOpportunities(
           sell.price,
           FLASH_LOAN_AMOUNT,
           network,
+          buy.dex,
+          sell.dex,
         );
 
         if (net <= 0) continue;
@@ -136,6 +168,8 @@ export function detectOpportunities(
             sell.price,
             FLASH_LOAN_AMOUNT,
             network,
+            buy.dex,
+            sell.dex,
           );
 
           const extraHopCost = 0.3;
