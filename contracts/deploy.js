@@ -141,7 +141,9 @@ const DEX_CONFIGS = {
     {
       id: 2,
       name: "Camelot V3",
-      router:   "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      // AlgebraSwapRouter (Camelot V3) on Arbitrum.
+      // NOTE: 0x1F98431c8aD98523631AE4a59f267346ea31F984 is the UniV3 Factory — NOT the router.
+      router:   "0x1F721E2E82F6676FCE4eA07A5958cF098D339e18",
       dexType:  7,   // CamelotV3
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,

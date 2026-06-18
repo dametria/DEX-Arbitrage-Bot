@@ -106,6 +106,9 @@ export function detectOpportunities(
         const buy = networkPrices[i]!;
         const sell = networkPrices[j]!;
 
+        // Skip any pair where either price is simulated — no real pool → trade will revert
+        if (buy.isSimulated || sell.isSimulated) continue;
+
         if (buy.liquidity < 50_000 || sell.liquidity < 50_000) continue;
 
         const rawSpreadPct = ((sell.price - buy.price) / buy.price) * 100;
@@ -150,6 +153,9 @@ export function detectOpportunities(
           const buy = networkPrices[i]!;
           const mid = networkPrices[j]!;
           const sell = networkPrices[k]!;
+
+          // Skip any leg with simulated prices — phantom pools cause on-chain reverts
+          if (buy.isSimulated || mid.isSimulated || sell.isSimulated) continue;
 
           if (
             buy.liquidity < 50_000 ||

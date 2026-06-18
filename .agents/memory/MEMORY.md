@@ -1,1 +1,3 @@
 - [Arbitrum DEX compatibility](arbitrum-dex-compat.md) — GMX V2 and Balancer V2 are incompatible with flash loan arbitrage; root causes and investigation trail.
+- [dexConfigs on-chain reads](dexconfigs-selector.md) — correct function selector and verified on-chain state for all 3 Arbitrum dexIds.
+- [Simulated prices bug](simulated-prices.md) — GeckoTerminal misses DEXs without top-volume pools; random fallback prices cause phantom trades that always revert on-chain.

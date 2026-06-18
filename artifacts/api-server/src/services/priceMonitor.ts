@@ -6,6 +6,9 @@ export interface DexPrice {
   price: number;
   liquidity: number;
   updatedAt: string;
+  /** true when price came from random simulation (no real GeckoTerminal pool found).
+   *  Simulated prices MUST NOT be used to trigger real on-chain trades. */
+  isSimulated: boolean;
 }
 
 interface DexConfig {
@@ -134,6 +137,7 @@ function simulateFallbackPrices(basePrice: number): DexPrice[] {
       price: Math.round(basePrice * jitter * 100) / 100,
       liquidity: 500_000 + Math.random() * 2_000_000,
       updatedAt: now,
+      isSimulated: true,
     };
   });
 }
@@ -177,13 +181,18 @@ export async function fetchAllPrices(): Promise<DexPrice[]> {
       let price: number;
       let liquidity: number;
 
+      let isSimulated: boolean;
       if (matchedEntry) {
         price = matchedEntry[1].price;
         liquidity = matchedEntry[1].liquidity;
+        isSimulated = false;
       } else {
+        // No real pool found on GeckoTerminal — fall back to random simulation.
+        // Mark isSimulated=true so the arbitrage detector will skip this price.
         const spread = (Math.random() - 0.5) * 0.006;
         price = Math.round(basePrice * (1 + spread) * 100) / 100;
         liquidity = 200_000 + Math.random() * 3_000_000;
+        isSimulated = true;
       }
 
       return {
@@ -192,6 +201,7 @@ export async function fetchAllPrices(): Promise<DexPrice[]> {
         price,
         liquidity,
         updatedAt: timestamp,
+        isSimulated,
       };
     });
 
