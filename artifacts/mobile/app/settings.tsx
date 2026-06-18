@@ -223,10 +223,10 @@ export default function SettingsScreen() {
 
       <Section title="Profit Threshold" colors={colors}>
         <Text style={[styles.sectionDesc, { color: colors.mutedForeground }]}>
-          Minimum profit percentage to trigger execution. Default: 0.15%
+          Minimum spread % to evaluate. Net profit (after all fees) must also be positive before execution.
         </Text>
         <View style={styles.thresholdRow}>
-          {[0.15, 0.2, 0.3, 0.5, 0.75, 1.0].map((v) => (
+          {[0.05, 0.1, 0.15, 0.2, 0.3, 0.5].map((v) => (
             <TouchableOpacity
               key={v}
               onPress={() => setMinProfitPct(v)}

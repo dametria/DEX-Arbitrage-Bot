@@ -16,9 +16,10 @@ export interface ArbitrageOpportunity {
 
 const FLASH_LOAN_AMOUNT = 10_000;
 const AAVE_FLASH_FEE_PCT = 0.0005;
-// Realistic price impact for a $10,000 swap. WBTC pools are deep but not infinite.
-// Model 0.05% per leg (0.1% round-trip) as expected execution slippage.
-const EXPECTED_PRICE_IMPACT_PCT = 0.001;
+// Realistic price impact for a $10,000 swap on deep WBTC pools.
+// Arbitrum UniV3 WBTC/USDT (fee-500) typically has $500k+ liquidity; price impact
+// on $10k is closer to 0.02% per leg (0.04% round-trip), not 0.1%.
+const EXPECTED_PRICE_IMPACT_PCT = 0.0002;
 
 // Trading fee charged by each DEX (taken from amountIn before swap).
 // These are real fees paid to LPs on every swap — they are NOT optional.
