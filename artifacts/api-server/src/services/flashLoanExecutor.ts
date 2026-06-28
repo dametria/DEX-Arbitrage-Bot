@@ -107,8 +107,8 @@ const BOT_ABI = [
   ) p) external`,
 ];
 
-const FLASH_LOAN_AMOUNT_USDT = 10_000;
-const AAVE_FEE_PCT            = 0.0005;
+const FLASH_LOAN_AMOUNT_USDT = 100_000;
+const AAVE_FEE_PCT            = 0.0009; // Aave V3 actual fee = 0.09%
 const DEADLINE_BUFFER_SECONDS = 60;
 const LOAN_DECIMALS           = 6; // USDT has 6 decimals
 const MIN_PROFIT_USD          = "0.50"; // $0.50 minimum net profit enforced on-chain

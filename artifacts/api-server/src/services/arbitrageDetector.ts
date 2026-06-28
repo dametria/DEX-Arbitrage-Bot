@@ -14,12 +14,12 @@ export interface ArbitrageOpportunity {
   status: "pending" | "executing" | "executed" | "failed" | "expired";
 }
 
-const FLASH_LOAN_AMOUNT = 10_000;
+const FLASH_LOAN_AMOUNT = 100_000;
 const AAVE_FLASH_FEE_PCT = 0.0009; // Aave V3 actual fee = 0.09% (not 0.05%)
-// Realistic price impact for a $10,000 swap on deep WBTC pools.
-// Arbitrum UniV3 WBTC/USDT (fee-500) typically has $500k+ liquidity; price impact
-// on $10k is closer to 0.02% per leg (0.04% round-trip), not 0.1%.
-const EXPECTED_PRICE_IMPACT_PCT = 0.0002;
+// Realistic price impact for a $100,000 swap on deep WBTC pools.
+// At $100k vs a $500k+ pool, price impact is roughly 0.05% per leg.
+// Smaller swaps would be less; larger swaps would be more.
+const EXPECTED_PRICE_IMPACT_PCT = 0.0005;
 
 // Trading fee charged by each DEX (taken from amountIn before swap).
 // These are real fees paid to LPs on every swap — they are NOT optional.
