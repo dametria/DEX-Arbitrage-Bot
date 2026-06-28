@@ -111,7 +111,7 @@ const FLASH_LOAN_AMOUNT_USDT = 100_000;
 const AAVE_FEE_PCT            = 0.0009; // Aave V3 actual fee = 0.09%
 const DEADLINE_BUFFER_SECONDS = 60;
 const LOAN_DECIMALS           = 6; // USDT has 6 decimals
-const MIN_PROFIT_USD          = "0.50"; // $0.50 minimum net profit enforced on-chain
+const MIN_PROFIT_USD          = "0.10"; // $0.10 minimum net profit enforced on-chain (effectively removes the floor)
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
