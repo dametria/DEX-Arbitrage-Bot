@@ -15,7 +15,7 @@ export interface ArbitrageOpportunity {
 }
 
 const FLASH_LOAN_AMOUNT = 10_000;
-const AAVE_FLASH_FEE_PCT = 0.0005;
+const AAVE_FLASH_FEE_PCT = 0.0009; // Aave V3 actual fee = 0.09% (not 0.05%)
 // Realistic price impact for a $10,000 swap on deep WBTC pools.
 // Arbitrum UniV3 WBTC/USDT (fee-500) typically has $500k+ liquidity; price impact
 // on $10k is closer to 0.02% per leg (0.04% round-trip), not 0.1%.
@@ -47,12 +47,14 @@ function generateId(): string {
 }
 
 function estimateGasCostUsd(network: string): number {
+  // Flash loan arb involves: approval × 2, swap × 2, loan repay — typically 500-600k gas.
+  // Real costs on each network at normal gas prices (not congestion peaks):
   const gasCosts: Record<string, number> = {
-    avalanche: 0.8,
-    arbitrum: 0.5,
-    optimism: 0.4,
+    arbitrum: 5.0,  // ~500k gas × ~0.01 gwei × ETH price; Arbitrum L2 fees ~$3-8 in practice
+    avalanche: 3.0, // AVAX gas cheaper but still ~$2-4 for complex txs
+    optimism: 2.0,  // OP stack: L2 execution cheap, L1 data fee adds ~$1-2
   };
-  return gasCosts[network] ?? 1.0;
+  return gasCosts[network] ?? 5.0;
 }
 
 function estimateProfit(
