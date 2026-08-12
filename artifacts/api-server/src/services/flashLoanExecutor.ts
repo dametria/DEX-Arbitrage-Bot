@@ -125,8 +125,8 @@ interface GasEstimate {
 
 const NATIVE_TOKEN_PRICES: Record<string, number> = {
   avalanche: 35,
-  arbitrum:  2400,
-  optimism:  2400,
+  arbitrum:  1890,
+  optimism:  1890,
 };
 
 function estimateGas(network: string): GasEstimate {
