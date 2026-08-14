@@ -37,7 +37,7 @@ const AAVE_V3_POOL: Record<string, string> = {
 // ArbitrageBot.sol deployed addresses
 const CONTRACT_ADDRESSES: Record<string, string> = {
   avalanche: "",
-  arbitrum:  "0x28B493c0541EB632f12b5b5AE84bd19031eF992d",
+  arbitrum:  "0xa9f98c9254B3918a811e449E24e6e22CA34965C2",
   optimism:  "",
 };
 
@@ -70,7 +70,7 @@ const WBTC_ADDRESSES: Record<string, string> = {
 // Public RPC endpoints per network
 const RPC_URLS: Record<string, string> = {
   avalanche: "https://api.avax.network/ext/bc/C/rpc",
-  arbitrum:  "https://arb1.arbitrum.io/rpc",
+  arbitrum:  "https://arb-mainnet.g.alchemy.com/v2/alch_DC-0Rhmo3-RDk7l2q7gjx",
   optimism:  "https://mainnet.optimism.io",
 };
 
