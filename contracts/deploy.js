@@ -56,26 +56,25 @@ const NETWORKS = {
 //   3 = BalancerV2  4 = VelodromeV2  5 = Curve  6 = GMX  7 = CamelotV3  8 = PancakeV3
 
 const DEX_CONFIGS = {
-  // ── Avalanche ──────────────────────────────────────────────────────────────
   avalanche: [
     {
       id: 0,
       name: "Trader Joe V2.1",
       router:   "0xb4315e873dBcf96Ffd0acd8EA43f689D8c20fB30",
-      dexType:  2,   // TraderJoeV21
+      dexType:  2,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
       curveIndexOut: 0,
       veloFactory:   ethers.ZeroAddress,
       veloStable:    false,
-      lbBinStep:     15, // 15-bip bin step for USDT/WBTC pool
+      lbBinStep:     15,
     },
     {
       id: 1,
       name: "Pangolin",
       router:   "0xE54Ca86531e17Ef3616d22Ca28b0D458b6C89106",
-      dexType:  1,   // UniswapV2
+      dexType:  1,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
@@ -88,7 +87,7 @@ const DEX_CONFIGS = {
       id: 2,
       name: "SushiSwap",
       router:   "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
-      dexType:  1,   // UniswapV2
+      dexType:  1,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
@@ -100,9 +99,8 @@ const DEX_CONFIGS = {
     {
       id: 3,
       name: "GMX",
-      // GMX Router on Avalanche
       router:   "0x5F719c2F1095F7B9fc68a68e35B51194f4b6abe8",
-      dexType:  6,   // GMX
+      dexType:  6,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
@@ -113,8 +111,6 @@ const DEX_CONFIGS = {
     },
   ],
 
-  // ── Arbitrum ───────────────────────────────────────────────────────────────
-  // Primary pairs from MEV volume: USDC-USDT, USDC-WETH, Fluid USDC, PancakeSwap USDC
   arbitrum: [
     {
       id: 0,
@@ -183,14 +179,13 @@ const DEX_CONFIGS = {
     },
   ],
 
-  // ── Optimism ───────────────────────────────────────────────────────────────
   optimism: [
     {
       id: 0,
       name: "Uniswap V3",
       router:   "0xE592427A0AEce92De3Edee1F18E0157C05861564",
-      dexType:  0,   // UniswapV3
-      feeTier:  3000, // 0.3% — primary WBTC/USDT pool on Optimism
+      dexType:  0,
+      feeTier:  3000,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
       curveIndexOut: 0,
@@ -202,12 +197,11 @@ const DEX_CONFIGS = {
       id: 1,
       name: "Velodrome V2",
       router:   "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858",
-      dexType:  4,   // VelodromeV2
+      dexType:  4,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
       curveIndexOut: 0,
-      // Velodrome PoolFactory on Optimism
       veloFactory:   "0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a",
       veloStable:    false,
       lbBinStep:     0,
@@ -215,11 +209,9 @@ const DEX_CONFIGS = {
     {
       id: 2,
       name: "Beethoven X",
-      // Beethoven X uses the Balancer V2 Vault
       router:   "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
-      dexType:  3,   // BalancerV2
+      dexType:  3,
       feeTier:  0,
-      // Beethoven X WBTC/USDT pool on Optimism
       balancerPoolId: "0x39965c9dab5448482cf7e002f583c812ceb53046000100000000000000000003",
       curveIndexIn:  0,
       curveIndexOut: 0,
@@ -230,12 +222,10 @@ const DEX_CONFIGS = {
     {
       id: 3,
       name: "Curve",
-      // Curve USDT/WBTC pool on Optimism
       router:   "0x061b87122Ed14b9526A813209C8a59a633257bAb",
-      dexType:  5,   // Curve
+      dexType:  5,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
-      // In the Curve USDT/WBTC pool: index 0 = USDT, index 1 = WBTC
       curveIndexIn:  0,
       curveIndexOut: 1,
       veloFactory:   ethers.ZeroAddress,
@@ -244,8 +234,6 @@ const DEX_CONFIGS = {
     },
   ],
 };
-
-// ─── ABI (minimal — only what deploy needs) ───────────────────────────────────
 
 const ABI = [
   "constructor(address _aavePool, address _balancerVault, address _owner)",
@@ -264,21 +252,34 @@ const ABI = [
    ) cfg) external`,
 ];
 
-// ─── Bytecode loader ──────────────────────────────────────────────────────────
-
 function loadBytecode() {
-  const artifactPath = path.join(__dirname, "out", "ArbitrageBot.sol", "ArbitrageBot.json");
-  if (!fs.existsSync(artifactPath)) {
+  // Prefer contracts/out (foundry.toml out = "contracts/out"), then root out/
+  const candidates = [
+    path.join(__dirname, "out", "ArbitrageBot.sol", "ArbitrageBot.json"),
+    path.join(__dirname, "..", "out", "ArbitrageBot.sol", "ArbitrageBot.json"),
+  ];
+  const artifactPath = candidates.find((p) => fs.existsSync(p));
+  if (!artifactPath) {
     throw new Error(
-      `Compiled artifact not found at ${artifactPath}.\n` +
-      `Run: forge build   (or: solc --bin ArbitrageBot.sol)`
+      `Compiled artifact not found.\nTried:\n  ${candidates.join("\n  ")}\n` +
+      `Run from repo root:\n  forge clean && forge build\n` +
+      `Or: forge build contracts/ArbitrageBot.sol --out contracts/out`
     );
   }
   const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+  // Guard: reject stale 2-arg constructor bytecode
+  const ctor = (artifact.abi || []).find((x) => x.type === "constructor");
+  const n = ctor && ctor.inputs ? ctor.inputs.length : 0;
+  if (n !== 3) {
+    throw new Error(
+      `STALE ARTIFACT at ${artifactPath}\n` +
+      `Constructor has ${n} args (need 3: _aavePool, _balancerVault, _owner).\n` +
+      `Fix: rm -rf contracts/out out && forge build`
+    );
+  }
+  console.log(`Using artifact: ${artifactPath} (constructor args: ${n})`);
   return artifact.bytecode.object ?? artifact.bytecode;
 }
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   const networkName = process.env.NETWORK;
@@ -305,12 +306,6 @@ async function main() {
   console.log(`Balance  : ${ethers.formatEther(balance)} native`);
 
   const bytecode = loadBytecode();
-  const artifactPath = path.join(__dirname, "out", "ArbitrageBot.sol", "ArbitrageBot.json");
-  try {
-    const st = fs.statSync(artifactPath);
-    console.log(`Artifact    : ${artifactPath}`);
-    console.log(`Artifact age: ${st.mtime.toISOString()} (re-run forge build if this is old)`);
-  } catch (_) {}
   const factory  = new ethers.ContractFactory(ABI, bytecode, wallet);
 
   console.log("\nDeploying ArbitrageBot...");
@@ -321,7 +316,6 @@ async function main() {
   const address = await contract.getAddress();
   console.log(`✓ ArbitrageBot deployed: ${address}`);
 
-  // ── Ownership / bytecode sanity checks (prevents cryptic Ownable reverts) ──
   const onchainOwner = await contract.owner();
   console.log(`On-chain owner : ${onchainOwner}`);
   console.log(`Deployer       : ${wallet.address}`);
@@ -334,27 +328,19 @@ async function main() {
   Actual on-chain owner:             ${onchainOwner}
 
   Common cause: forge artifact is still the OLD 2-arg constructor.
-  Old bytecode treats arg2 (Balancer Vault) as owner, so owner becomes
-  0xBA12222222228d8Ba445958a75a0704d566BF2C8 instead of you.
-
-  Fix:
-    1. git pull
-    2. forge clean && forge build
-    3. Confirm contracts/out/ArbitrageBot.sol/ArbitrageBot.json is fresh
-    4. Re-run this script (do not reuse the broken address above)
+  Fix: rm -rf contracts/out out && forge build && redeploy
 ─────────────────────────────────────────────────────
 `);
     process.exit(1);
   }
 
-  // Optional: confirm Balancer flag exists (new bytecode only)
   try {
     const useBal = await contract.useBalancerFlashLoan();
     console.log(`useBalancerFlashLoan: ${useBal}`);
   } catch (e) {
     console.error(`
-  FATAL: useBalancerFlashLoan() missing — this is the OLD Aave-only bytecode.
-  Run: forge clean && forge build   then redeploy.
+  FATAL: useBalancerFlashLoan() missing — OLD Aave-only bytecode.
+  Run: rm -rf contracts/out out && forge build
 `);
     process.exit(1);
   }
@@ -390,15 +376,8 @@ async function main() {
 
   Next steps
   ──────────
-  1. Add the contract address to flashLoanExecutor.ts:
-       CONTRACT_ADDRESSES["${networkName}"] = "${address}";
-
-  2. Fund the contract with a small amount of native gas
-     (only needed when gasSource = "contract"):
-       cast send ${address} --value 0.01ether --private-key $PRIVATE_KEY
-
-  3. Approve USDT allowance from the contract to Aave if needed
-     (Aave pulls the repayment, so the contract must hold USDT).
+  1. Set CONTRACT_ADDRESSES["${networkName}"] = "${address}" in flashLoanExecutor.ts
+  2. Fund gas if needed: cast send ${address} --value 0.01ether --private-key $PRIVATE_KEY
 ─────────────────────────────────────────────────────
 `);
 }
