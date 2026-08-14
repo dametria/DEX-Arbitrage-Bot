@@ -35,8 +35,11 @@ const NETWORKS = {
     rpc:      "https://arb1.arbitrum.io/rpc",
     chainId:  42161,
     aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    balancerVault: "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
     usdt:     "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+    usdc:     "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
     wbtc:     "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+    weth:     "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
   },
   optimism: {
     rpc:      "https://mainnet.optimism.io",
@@ -50,7 +53,7 @@ const NETWORKS = {
 // ─── DEX registry ────────────────────────────────────────────────────────────
 // dexType:
 //   0 = UniswapV3  1 = UniswapV2  2 = TraderJoeV21
-//   3 = BalancerV2  4 = VelodromeV2  5 = Curve  6 = GMX  7 = CamelotV3
+//   3 = BalancerV2  4 = VelodromeV2  5 = Curve  6 = GMX  7 = CamelotV3  8 = PancakeV3
 
 const DEX_CONFIGS = {
   // ── Avalanche ──────────────────────────────────────────────────────────────
@@ -111,13 +114,14 @@ const DEX_CONFIGS = {
   ],
 
   // ── Arbitrum ───────────────────────────────────────────────────────────────
+  // Primary pairs from MEV volume: USDC-USDT, USDC-WETH, Fluid USDC, PancakeSwap USDC
   arbitrum: [
     {
       id: 0,
       name: "Uniswap V3",
       router:   "0xE592427A0AEce92De3Edee1F18E0157C05861564",
-      dexType:  0,   // UniswapV3
-      feeTier:  500, // 0.05% pool — deepest WBTC/USDT liquidity
+      dexType:  0,
+      feeTier:  500,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
       curveIndexOut: 0,
@@ -129,7 +133,7 @@ const DEX_CONFIGS = {
       id: 1,
       name: "SushiSwap",
       router:   "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
-      dexType:  1,   // UniswapV2
+      dexType:  1,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
@@ -141,10 +145,8 @@ const DEX_CONFIGS = {
     {
       id: 2,
       name: "Camelot V3",
-      // AlgebraSwapRouter (Camelot V3) on Arbitrum.
-      // NOTE: 0x1F98431c8aD98523631AE4a59f267346ea31F984 is the UniV3 Factory — NOT the router.
       router:   "0x1F721E2E82F6676FCE4eA07A5958cF098D339e18",
-      dexType:  7,   // CamelotV3
+      dexType:  7,
       feeTier:  0,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
@@ -155,10 +157,10 @@ const DEX_CONFIGS = {
     },
     {
       id: 3,
-      name: "GMX",
-      router:   "0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8", // GMX V2 ExchangeRouter (V1 permanently disabled Jul 2025)
-      dexType:  6,   // GMX
-      feeTier:  0,
+      name: "PancakeSwap V3",
+      router:   "0x1b81D678ffb9C0263b24A97847620C99d213eB14",
+      dexType:  8,
+      feeTier:  500,
       balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
       curveIndexOut: 0,
@@ -168,13 +170,11 @@ const DEX_CONFIGS = {
     },
     {
       id: 4,
-      name: "Balancer V2",
-      // Balancer Vault is the same address across networks
-      router:   "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
-      dexType:  3,   // BalancerV2
+      name: "Fluid",
+      router:   "0x91716C4EDA1Fb55e84Bf8b4c7085f84285c19085",
+      dexType:  1,
       feeTier:  0,
-      // WBTC/USDT Balancer pool on Arbitrum
-      balancerPoolId: "0x64541216bafffeec8ea535bb71fbc927831d0595000100000000000000000002",
+      balancerPoolId: ethers.ZeroHash,
       curveIndexIn:  0,
       curveIndexOut: 0,
       veloFactory:   ethers.ZeroAddress,
@@ -248,7 +248,7 @@ const DEX_CONFIGS = {
 // ─── ABI (minimal — only what deploy needs) ───────────────────────────────────
 
 const ABI = [
-  "constructor(address _aavePool, address _owner)",
+  "constructor(address _aavePool, address _balancerVault, address _owner)",
   `function setDexConfig(uint8 dexId, tuple(
       address router,
       uint8   dexType,
@@ -306,7 +306,8 @@ async function main() {
   const factory  = new ethers.ContractFactory(ABI, bytecode, wallet);
 
   console.log("\nDeploying ArbitrageBot...");
-  const contract = await factory.deploy(net.aavePool, wallet.address);
+  const balancerVault = net.balancerVault || ethers.ZeroAddress;
+  const contract = await factory.deploy(net.aavePool, balancerVault, wallet.address);
   await contract.waitForDeployment();
 
   const address = await contract.getAddress();
@@ -336,7 +337,9 @@ async function main() {
 
   Contract : ${address}
   Aave Pool: ${net.aavePool}
+  Balancer : ${net.balancerVault || "n/a"}
   USDT     : ${net.usdt}
+  USDC     : ${net.usdc || "n/a"}
   WBTC     : ${net.wbtc}
 
   Next steps
