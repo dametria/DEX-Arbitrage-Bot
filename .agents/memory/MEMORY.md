@@ -1,3 +1,4 @@
-- [Arbitrum DEX compatibility](arbitrum-dex-compat.md) — GMX V2 and Balancer V2 are incompatible with flash loan arbitrage; root causes and investigation trail.
-- [dexConfigs on-chain reads](dexconfigs-selector.md) — correct function selector and verified on-chain state for all 3 Arbitrum dexIds.
+- [Arbitrum DEX compatibility](arbitrum-dex-compat.md) — GMX V2 incompatible with flash loans; Balancer-as-DEX removed for missing WBTC/USDT pool (now Balancer is flash-loan provider only).
+- [dexConfigs on-chain reads](dexconfigs-selector.md) — correct function selector and verified on-chain state.
 - [Simulated prices bug](simulated-prices.md) — GeckoTerminal misses DEXs without top-volume pools; random fallback prices cause phantom trades that always revert on-chain.
+- [2026-08-14 rework](rework-fluid-pancake-balancer.md) — Expo fix, Fluid + PancakeSwap V3 added, pairs expanded to USDC-centric MEV leaders, flash loan switched to Balancer Vault (0 fee). Redeploy required.
