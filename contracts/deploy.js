@@ -249,6 +249,8 @@ const DEX_CONFIGS = {
 
 const ABI = [
   "constructor(address _aavePool, address _balancerVault, address _owner)",
+  "function owner() view returns (address)",
+  "function useBalancerFlashLoan() view returns (bool)",
   `function setDexConfig(uint8 dexId, tuple(
       address router,
       uint8   dexType,
@@ -303,6 +305,12 @@ async function main() {
   console.log(`Balance  : ${ethers.formatEther(balance)} native`);
 
   const bytecode = loadBytecode();
+  const artifactPath = path.join(__dirname, "out", "ArbitrageBot.sol", "ArbitrageBot.json");
+  try {
+    const st = fs.statSync(artifactPath);
+    console.log(`Artifact    : ${artifactPath}`);
+    console.log(`Artifact age: ${st.mtime.toISOString()} (re-run forge build if this is old)`);
+  } catch (_) {}
   const factory  = new ethers.ContractFactory(ABI, bytecode, wallet);
 
   console.log("\nDeploying ArbitrageBot...");
@@ -312,6 +320,44 @@ async function main() {
 
   const address = await contract.getAddress();
   console.log(`✓ ArbitrageBot deployed: ${address}`);
+
+  // ── Ownership / bytecode sanity checks (prevents cryptic Ownable reverts) ──
+  const onchainOwner = await contract.owner();
+  console.log(`On-chain owner : ${onchainOwner}`);
+  console.log(`Deployer       : ${wallet.address}`);
+  if (onchainOwner.toLowerCase() !== wallet.address.toLowerCase()) {
+    console.error(`
+─────────────────────────────────────────────────────
+  FATAL: owner mismatch — setDexConfig will revert.
+
+  Expected owner (your PRIVATE_KEY): ${wallet.address}
+  Actual on-chain owner:             ${onchainOwner}
+
+  Common cause: forge artifact is still the OLD 2-arg constructor.
+  Old bytecode treats arg2 (Balancer Vault) as owner, so owner becomes
+  0xBA12222222228d8Ba445958a75a0704d566BF2C8 instead of you.
+
+  Fix:
+    1. git pull
+    2. forge clean && forge build
+    3. Confirm contracts/out/ArbitrageBot.sol/ArbitrageBot.json is fresh
+    4. Re-run this script (do not reuse the broken address above)
+─────────────────────────────────────────────────────
+`);
+    process.exit(1);
+  }
+
+  // Optional: confirm Balancer flag exists (new bytecode only)
+  try {
+    const useBal = await contract.useBalancerFlashLoan();
+    console.log(`useBalancerFlashLoan: ${useBal}`);
+  } catch (e) {
+    console.error(`
+  FATAL: useBalancerFlashLoan() missing — this is the OLD Aave-only bytecode.
+  Run: forge clean && forge build   then redeploy.
+`);
+    process.exit(1);
+  }
 
   console.log(`\nRegistering ${dexes.length} DEX configs...`);
   for (const dex of dexes) {
