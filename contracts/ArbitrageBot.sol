@@ -75,6 +75,43 @@ interface IFlashLoanSimpleReceiver {
     ) external returns (bool);
 }
 
+
+// ───────────────────── Balancer V2 flash-loan interfaces ─────────────────────
+
+interface IFlashLoanRecipient {
+    function receiveFlashLoan(
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        uint256[] memory feeAmounts,
+        bytes memory userData
+    ) external;
+}
+
+interface IBalancerVaultFL {
+    function flashLoan(
+        IFlashLoanRecipient recipient,
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        bytes memory userData
+    ) external;
+}
+
+// 8: PancakeSwap V3 (same layout as Uni V3 exactInputSingle)
+interface IPancakeV3Router {
+    struct ExactInputSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24  fee;
+        address recipient;
+        uint256 deadline;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+        uint160 sqrtPriceLimitX96;
+    }
+    function exactInputSingle(ExactInputSingleParams calldata params)
+        external payable returns (uint256 amountOut);
+}
+
 // ─────────────────────── DEX router interfaces ───────────────────────────────
 
 // 0: Uniswap V3
@@ -205,9 +242,11 @@ interface ICamelotV3Router {
  *   [FIX-9]  withdraw() / withdrawNative() guard against zero recipient.
  *   [FIX-10] initiateArbitrage() validates tokenBorrow, tokenBuy, loanAmount.
  */
-contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
+contract ArbitrageBot is IFlashLoanSimpleReceiver, IFlashLoanRecipient, ReentrancyGuard, Ownable {
 
     IPool public immutable aavePool;
+    IBalancerVaultFL public immutable balancerVault;
+    bool public useBalancerFlashLoan; // true = Balancer (0 fee), false = Aave
 
     struct DexConfig {
         address router;
@@ -249,9 +288,15 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
-    constructor(address _aavePool, address _owner) Ownable(_owner) {
-        require(_aavePool != address(0), "ArbitrageBot: zero pool address");
+    constructor(address _aavePool, address _balancerVault, address _owner) Ownable(_owner) {
+        require(_aavePool != address(0) || _balancerVault != address(0), "ArbitrageBot: zero pool");
         aavePool = IPool(_aavePool);
+        balancerVault = IBalancerVaultFL(_balancerVault);
+        useBalancerFlashLoan = _balancerVault != address(0);
+    }
+
+    function setFlashLoanProvider(bool _useBalancer) external onlyOwner {
+        useBalancerFlashLoan = _useBalancer;
     }
 
     // ── Owner: register a DEX ────────────────────────────────────────────────
@@ -285,13 +330,21 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
         require(p.tokenBuy    != address(0), "ArbitrageBot: zero buy token");
         require(p.loanAmount  > 0,           "ArbitrageBot: zero loan amount");
 
-        aavePool.flashLoanSimple(
-            address(this),
-            p.tokenBorrow,
-            p.loanAmount,
-            abi.encode(p),
-            0
-        );
+        if (useBalancerFlashLoan) {
+            IERC20[] memory tokens = new IERC20[](1);
+            tokens[0] = IERC20(p.tokenBorrow);
+            uint256[] memory amounts = new uint256[](1);
+            amounts[0] = p.loanAmount;
+            balancerVault.flashLoan(IFlashLoanRecipient(address(this)), tokens, amounts, abi.encode(p));
+        } else {
+            aavePool.flashLoanSimple(
+                address(this),
+                p.tokenBorrow,
+                p.loanAmount,
+                abi.encode(p),
+                0
+            );
+        }
     }
 
     // ── Aave callback ────────────────────────────────────────────────────────
@@ -340,6 +393,51 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
         );
 
         return true;
+    }
+
+    // ── Balancer flash-loan callback (0 fee) ──────────────────────────────────
+
+    function receiveFlashLoan(
+        IERC20[] memory tokens,
+        uint256[] memory amounts,
+        uint256[] memory feeAmounts,
+        bytes memory userData
+    ) external override {
+        if (msg.sender != address(balancerVault)) revert OnlyAavePool();
+        ArbParams memory p = abi.decode(userData, (ArbParams));
+        if (block.timestamp > p.deadline) revert DeadlineExpired();
+
+        address asset = address(tokens[0]);
+        uint256 amount = amounts[0];
+        uint256 premium = feeAmounts.length > 0 ? feeAmounts[0] : 0;
+
+        uint256 beforeBal = IERC20(asset).balanceOf(address(this));
+
+        if (p.hops == 1) {
+            _executeOneHop(p, amount);
+        } else {
+            _executeTwoHop(p, amount);
+        }
+
+        uint256 afterBal = IERC20(asset).balanceOf(address(this));
+        uint256 repayAmount = amount + premium;
+        uint256 grossProfit = afterBal > beforeBal ? afterBal - beforeBal : 0;
+        uint256 netProfit = grossProfit > premium ? grossProfit - premium : 0;
+
+        if (netProfit < p.minProfit) revert InsufficientProfit(netProfit, p.minProfit);
+
+        bool ok = IERC20(asset).transfer(address(balancerVault), repayAmount);
+        require(ok, "ArbitrageBot: Balancer repay failed");
+
+        emit ArbitrageExecuted(
+            p.buyDexId,
+            p.sellDexId,
+            asset,
+            p.tokenBuy,
+            amount,
+            netProfit,
+            premium
+        );
     }
 
     // ── Hop executors ────────────────────────────────────────────────────────
@@ -488,6 +586,21 @@ contract ArbitrageBot is IFlashLoanSimpleReceiver, ReentrancyGuard, Ownable {
                     amountIn:         amountIn,
                     amountOutMinimum: amountOutMin,
                     limitSqrtPrice:   0
+                })
+            );
+        }
+
+        if (dt == 8) {
+            return IPancakeV3Router(router).exactInputSingle(
+                IPancakeV3Router.ExactInputSingleParams({
+                    tokenIn:           tokenIn,
+                    tokenOut:          tokenOut,
+                    fee:               cfg.feeTier,
+                    recipient:         address(this),
+                    deadline:          deadline,
+                    amountIn:          amountIn,
+                    amountOutMinimum:  amountOutMin,
+                    sqrtPriceLimitX96: 0
                 })
             );
         }
