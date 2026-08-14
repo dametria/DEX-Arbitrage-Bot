@@ -1,8 +1,8 @@
 import { ethers } from "ethers";
 import { logger } from "../lib/logger.js";
 
-const RPC_URL = process.env["RPC_URL"] ?? "https://arb1.arbitrum.io/rpc";
-const CONTRACT_ADDRESS = process.env["CONTRACT_ADDRESS"] ?? "0x28B493c0541EB632f12b5b5AE84bd19031eF992d";
+const RPC_URL = process.env["RPC_URL"] ?? "https://arb-mainnet.g.alchemy.com/v2/alch_DC-0Rhmo3-RDk7l2q7gjx";
+const CONTRACT_ADDRESS = process.env["CONTRACT_ADDRESS"] ?? "0xa9f98c9254B3918a811e449E24e6e22CA34965C2";
 
 const ABI = [
   `function setDexConfig(uint8 dexId, tuple(
