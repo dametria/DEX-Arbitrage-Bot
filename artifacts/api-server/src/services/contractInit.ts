@@ -2,12 +2,8 @@ import { ethers } from "ethers";
 import { logger } from "../lib/logger.js";
 
 const RPC_URL = process.env["RPC_URL"] ?? "https://arb1.arbitrum.io/rpc";
-const CONTRACT_ADDRESS = "0x28B493c0541EB632f12b5b5AE84bd19031eF992d";
+const CONTRACT_ADDRESS = process.env["CONTRACT_ADDRESS"] ?? "0x28B493c0541EB632f12b5b5AE84bd19031eF992d";
 
-// setDexConfig(uint8 dexId, DexConfig cfg)
-// DexConfig: (address router, uint8 dexType, uint24 feeTier,
-//             bytes32 balancerPoolId, int128 curveIndexIn, int128 curveIndexOut,
-//             address veloFactory, bool veloStable, uint256 lbBinStep)
 const ABI = [
   `function setDexConfig(uint8 dexId, tuple(
       address router,
@@ -31,14 +27,11 @@ const ABI = [
       bool    veloStable,
       uint256 lbBinStep
   )`,
+  `function setFlashLoanProvider(bool _useBalancer) external`,
+  `function useBalancerFlashLoan() external view returns (bool)`,
 ];
 
-// Arbitrum DEX routers — one entry per dexId used by initiateArbitrage
-// dexType mirrors the contract's enum: 0=UniV3, 1=UniV2, 7=CamelotV3
-// Balancer V2 (dexId 4) removed: no liquid WBTC/USDT pool exists on Arbitrum Balancer.
-// GMX (dexId 3) removed: GMX V2 uses an async order/keeper model — incompatible with flash loans.
-//   The ArbitrageBot.sol uses the GMX V1 swap() interface; GMX V1 was permanently disabled July 2025.
-// Uniswap V3 feeTier=500 (0.05%): the main WBTC/USDT pool; the 3000 (0.3%) pool has 275× less liquidity.
+// Arbitrum DEXs aligned with MEV volume leaders + requested Fluid / Pancake
 const ARBITRUM_DEX_CONFIGS: {
   dexId: number;
   label: string;
@@ -71,6 +64,22 @@ const ARBITRUM_DEX_CONFIGS: {
     feeTier: 0,
     balancerPoolId: ethers.ZeroHash,
   },
+  {
+    dexId:   3,
+    label:   "PancakeSwap V3",
+    router:  "0x1b81D678ffb9C0263b24A97847620C99d213eB14",
+    dexType: 8,
+    feeTier: 500,
+    balancerPoolId: ethers.ZeroHash,
+  },
+  {
+    dexId:   4,
+    label:   "Fluid",
+    router:  "0x91716C4EDA1Fb55e84Bf8b4c7085f84285c19085",
+    dexType: 1,
+    feeTier: 0,
+    balancerPoolId: ethers.ZeroHash,
+  },
 ];
 
 export interface InitResult {
@@ -90,10 +99,19 @@ export async function initDexConfigs(privateKey: string): Promise<InitResult> {
   const failed:     string[] = [];
   const alreadySet: string[] = [];
 
+  try {
+    const useBal = await contract.useBalancerFlashLoan?.().catch(() => null);
+    if (useBal === false) {
+      const tx = await contract.setFlashLoanProvider(true, { gasLimit: 80_000n });
+      await tx.wait();
+      logger.info("Switched flash-loan provider to Balancer (0 fee)");
+    }
+  } catch {
+    // Old contract without Balancer support
+  }
+
   for (const dex of ARBITRUM_DEX_CONFIGS) {
     try {
-      // Check if already set — skip only if router, feeTier, AND balancerPoolId all match.
-      // Comparing just the router address misses fee-tier or pool-ID changes.
       const existing = await contract.dexConfigs(dex.dexId) as {
         router: string;
         feeTier: bigint;
@@ -110,8 +128,8 @@ export async function initDexConfigs(privateKey: string): Promise<InitResult> {
 
       logger.info({ dexId: dex.dexId, label: dex.label, router: dex.router }, "Setting DEX config");
 
-      const feeData   = await provider.getFeeData();
-      const maxFee    = feeData.maxFeePerGas
+      const feeData = await provider.getFeeData();
+      const maxFee  = feeData.maxFeePerGas
         ? feeData.maxFeePerGas * 130n / 100n
         : undefined;
 
