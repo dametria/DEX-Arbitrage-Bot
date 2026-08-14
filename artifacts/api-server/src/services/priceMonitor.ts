@@ -3,6 +3,8 @@ import { logger } from "../lib/logger.js";
 export interface DexPrice {
   dex: string;
   network: string;
+  /** Human pair label e.g. USDC-USDT, USDC-WETH, WBTC-USDT */
+  pair: string;
   price: number;
   liquidity: number;
   updatedAt: string;
@@ -19,36 +21,57 @@ interface DexConfig {
 }
 
 const DEX_CONFIGS: DexConfig[] = [
-  // Avalanche (min 3 DEXs)
+  // Avalanche
   { name: "Trader Joe V2.1", geckoTerminalDex: "traderjoe-v2-1", geckoNetwork: "avax", network: "avalanche" },
   { name: "Pangolin", geckoTerminalDex: "pangolin-v2", geckoNetwork: "avax", network: "avalanche" },
   { name: "SushiSwap", geckoTerminalDex: "sushiswap", geckoNetwork: "avax", network: "avalanche" },
-  { name: "GMX", geckoTerminalDex: "gmx-avalanche", geckoNetwork: "avax", network: "avalanche" },
-  // Arbitrum (min 3 DEXs)
-  // Note: Balancer V2 removed — no liquid WBTC/USDT pool on Arbitrum; GeckoTerminal falls back to
-  // simulated prices for it which generate phantom opportunities that always revert on-chain.
-  // Note: GMX removed — GMX V2 uses an async order/keeper model (createOrder), not a synchronous
-  // swap(). Flash loans require all swaps in one tx; GMX V2 is fundamentally incompatible.
-  // The ArbitrageBot.sol uses the GMX V1 swap() interface which no longer exists on-chain.
+  // Arbitrum — MEV volume leaders + Fluid / Pancake
   { name: "Uniswap V3", geckoTerminalDex: "uniswap-v3", geckoNetwork: "arbitrum", network: "arbitrum" },
   { name: "SushiSwap", geckoTerminalDex: "sushiswap-arbitrum", geckoNetwork: "arbitrum", network: "arbitrum" },
   { name: "Camelot V3", geckoTerminalDex: "camelot-v3", geckoNetwork: "arbitrum", network: "arbitrum" },
-  // Optimism (min 3 DEXs)
+  { name: "PancakeSwap V3", geckoTerminalDex: "pancakeswap-v3-arbitrum", geckoNetwork: "arbitrum", network: "arbitrum" },
+  { name: "Fluid", geckoTerminalDex: "fluid", geckoNetwork: "arbitrum", network: "arbitrum" },
+  // Optimism
   { name: "Uniswap V3", geckoTerminalDex: "uniswap-v3-optimism", geckoNetwork: "optimism", network: "optimism" },
   { name: "Velodrome V2", geckoTerminalDex: "velodrome-v2", geckoNetwork: "optimism", network: "optimism" },
   { name: "Beethoven X", geckoTerminalDex: "beethoven-x", geckoNetwork: "optimism", network: "optimism" },
   { name: "Curve", geckoTerminalDex: "curve-optimism", geckoNetwork: "optimism", network: "optimism" },
 ];
 
-const WBTC_SYMBOLS = ["WBTC", "wbtc", "Wrapped Bitcoin"];
+/** Pairs prioritised from Arbitrum MEV volume breakdown */
+const TARGET_PAIRS = [
+  "USDC-USDT", "USDC-WETH", "USDT-WETH", "USDC-WBTC", "WBTC-USDT",
+  "WETH-WBTC", "USDC-DAI", "USDT-DAI",
+];
+
+const PAIR_SYMBOLS: Record<string, string[]> = {
+  USDC: ["USDC", "usdc", "USD Coin"],
+  USDT: ["USDT", "usdt", "Tether"],
+  WETH: ["WETH", "weth", "Wrapped Ether", "ETH"],
+  WBTC: ["WBTC", "wbtc", "Wrapped Bitcoin"],
+  DAI:  ["DAI", "dai"],
+};
 
 let priceCache: DexPrice[] = [];
 let lastFetch: number = 0;
 const CACHE_TTL = 10_000;
 
+function matchPair(name: string): string | null {
+  const upper = name.toUpperCase();
+  for (const pair of TARGET_PAIRS) {
+    const [a, b] = pair.split("-") as [string, string];
+    const aSyms = PAIR_SYMBOLS[a] ?? [a];
+    const bSyms = PAIR_SYMBOLS[b] ?? [b];
+    const hasA = aSyms.some((s) => upper.includes(s.toUpperCase()));
+    const hasB = bSyms.some((s) => upper.includes(s.toUpperCase()));
+    if (hasA && hasB) return pair;
+  }
+  return null;
+}
+
 async function fetchNetworkPrices(
   geckoNetwork: string,
-): Promise<Record<string, { price: number; liquidity: number }>> {
+): Promise<Record<string, { price: number; liquidity: number; pair: string }>> {
   const url = `https://api.geckoterminal.com/api/v2/networks/${geckoNetwork}/pools?page=1&sort=h24_volume_usd_desc&include=base_token,quote_token,dex`;
 
   const res = await fetch(url, {
@@ -76,10 +99,7 @@ async function fetchNetworkPrices(
     included?: Array<{ id: string; type: string; attributes: { symbol: string; name: string } }>;
   };
 
-  const includedTokens = new Map<
-    string,
-    { symbol: string; name: string }
-  >();
+  const includedTokens = new Map<string, { symbol: string; name: string }>();
   if (json.included) {
     for (const inc of json.included) {
       if (inc.type === "token") {
@@ -91,55 +111,53 @@ async function fetchNetworkPrices(
     }
   }
 
-  const result: Record<string, { price: number; liquidity: number }> = {};
+  const result: Record<string, { price: number; liquidity: number; pair: string }> = {};
 
   for (const pool of json.data) {
     const name = pool.attributes.name ?? "";
-    const isWbtcPool = WBTC_SYMBOLS.some(
-      (sym) =>
-        name.toUpperCase().includes("WBTC") ||
-        name.toLowerCase().includes("wbtc"),
-    );
-    if (!isWbtcPool) continue;
+    const pair = matchPair(name);
+    if (!pair) continue;
 
     const baseTokenId = pool.relationships.base_token?.data?.id;
     const baseToken = baseTokenId ? includedTokens.get(baseTokenId) : null;
-    const baseIsWbtc =
-      baseToken &&
-      (baseToken.symbol.toUpperCase() === "WBTC" ||
-        baseToken.name.toLowerCase().includes("bitcoin"));
 
-    let price: number;
-    if (baseIsWbtc) {
-      price = parseFloat(pool.attributes.base_token_price_usd) || 0;
-    } else {
-      price = parseFloat(pool.attributes.quote_token_price_usd) || 0;
+    let price = parseFloat(pool.attributes.base_token_price_usd) || 0;
+    if (pair.includes("USDC") || pair.includes("USDT") || pair.includes("DAI")) {
+      const isStablePair = (pair.match(/USDC|USDT|DAI/g) || []).length === 2;
+      if (!isStablePair) {
+        const baseIsStable = baseToken && ["USDC", "USDT", "DAI"].includes(baseToken.symbol.toUpperCase());
+        if (baseIsStable) {
+          price = parseFloat(pool.attributes.quote_token_price_usd) || price;
+        }
+      }
     }
 
-    if (price < 10_000 || price > 500_000) continue;
+    if (price <= 0) continue;
 
     const liquidity = parseFloat(pool.attributes.reserve_in_usd) || 0;
     const dexId = pool.relationships.dex?.data?.id ?? "";
-    result[dexId] = { price, liquidity };
+    const key = `${dexId}:${pair}`;
+    if (!result[key] || result[key]!.liquidity < liquidity) {
+      result[key] = { price, liquidity, pair };
+    }
   }
 
   return result;
 }
 
-function simulateFallbackPrices(basePrice: number): DexPrice[] {
+function simulateFallbackPrices(): DexPrice[] {
   const now = new Date().toISOString();
-  return DEX_CONFIGS.map((cfg) => {
-    const spread = (Math.random() - 0.5) * 0.004;
-    const jitter = 1 + spread;
-    return {
+  return DEX_CONFIGS.flatMap((cfg) =>
+    TARGET_PAIRS.slice(0, 3).map((pair) => ({
       dex: cfg.name,
       network: cfg.network,
-      price: Math.round(basePrice * jitter * 100) / 100,
+      pair,
+      price: pair.includes("WETH") || pair.includes("WBTC") ? (pair.includes("WBTC") ? 65000 : 2500) : 1.0,
       liquidity: 500_000 + Math.random() * 2_000_000,
       updatedAt: now,
       isSimulated: true,
-    };
-  });
+    })),
+  );
 }
 
 export async function fetchAllPrices(): Promise<DexPrice[]> {
@@ -155,65 +173,55 @@ export async function fetchAllPrices(): Promise<DexPrice[]> {
       fetchNetworkPrices("optimism"),
     ]);
 
-    const networkResults: Record<string, Record<string, { price: number; liquidity: number }>> = {
+    const networkResults: Record<string, Record<string, { price: number; liquidity: number; pair: string }>> = {
       avax: avaxPrices.status === "fulfilled" ? avaxPrices.value : {},
       arbitrum: arbitrumPrices.status === "fulfilled" ? arbitrumPrices.value : {},
       optimism: optimismPrices.status === "fulfilled" ? optimismPrices.value : {},
     };
 
-    const allPricesFromApi = Object.values(networkResults).flatMap((r) =>
-      Object.values(r).map((v) => v.price).filter((p) => p > 0),
-    );
-
-    const basePrice =
-      allPricesFromApi.length > 0
-        ? allPricesFromApi.reduce((a, b) => a + b, 0) / allPricesFromApi.length
-        : 65000;
-
     const timestamp = new Date().toISOString();
-    const prices: DexPrice[] = DEX_CONFIGS.map((cfg) => {
-      const networkData = networkResults[cfg.geckoNetwork] ?? {};
+    const prices: DexPrice[] = [];
 
-      const matchedEntry = Object.entries(networkData).find(([id]) =>
+    for (const cfg of DEX_CONFIGS) {
+      const networkData = networkResults[cfg.geckoNetwork] ?? {};
+      const matched = Object.entries(networkData).filter(([id]) =>
         id.toLowerCase().includes(cfg.geckoTerminalDex.toLowerCase().split("-")[0]!),
       );
 
-      let price: number;
-      let liquidity: number;
-
-      let isSimulated: boolean;
-      if (matchedEntry) {
-        price = matchedEntry[1].price;
-        liquidity = matchedEntry[1].liquidity;
-        isSimulated = false;
+      if (matched.length > 0) {
+        for (const [, data] of matched) {
+          prices.push({
+            dex: cfg.name,
+            network: cfg.network,
+            pair: data.pair,
+            price: data.price,
+            liquidity: data.liquidity,
+            updatedAt: timestamp,
+            isSimulated: false,
+          });
+        }
       } else {
-        // No real pool found on GeckoTerminal — fall back to random simulation.
-        // Mark isSimulated=true so the arbitrage detector will skip this price.
-        const spread = (Math.random() - 0.5) * 0.006;
-        price = Math.round(basePrice * (1 + spread) * 100) / 100;
-        liquidity = 200_000 + Math.random() * 3_000_000;
-        isSimulated = true;
+        for (const pair of TARGET_PAIRS.slice(0, 2)) {
+          prices.push({
+            dex: cfg.name,
+            network: cfg.network,
+            pair,
+            price: pair.includes("WBTC") ? 65000 : pair.includes("WETH") ? 2500 : 1.0,
+            liquidity: 100_000,
+            updatedAt: timestamp,
+            isSimulated: true,
+          });
+        }
       }
-
-      return {
-        dex: cfg.name,
-        network: cfg.network,
-        price,
-        liquidity,
-        updatedAt: timestamp,
-        isSimulated,
-      };
-    });
+    }
 
     priceCache = prices;
     lastFetch = now;
+    logger.info({ count: prices.length, real: prices.filter((p) => !p.isSimulated).length }, "Prices refreshed");
     return prices;
   } catch (err) {
     logger.warn({ err }, "Price fetch failed, using simulated prices");
-    const basePrice = priceCache.length > 0
-      ? priceCache.reduce((s, p) => s + p.price, 0) / priceCache.length
-      : 65000;
-    priceCache = simulateFallbackPrices(basePrice);
+    priceCache = simulateFallbackPrices();
     lastFetch = now;
     return priceCache;
   }
