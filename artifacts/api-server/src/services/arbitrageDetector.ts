@@ -14,8 +14,9 @@ export interface ArbitrageOpportunity {
   status: "pending" | "executing" | "executed" | "failed" | "expired";
 }
 
-const FLASH_LOAN_AMOUNT = 100_000;
-const AAVE_FLASH_FEE_PCT = 0.0009; // Aave V3 actual fee = 0.09% (not 0.05%)
+const FLASH_LOAN_AMOUNT = 50_000; // realistic for USDC pair liquidity
+const BALANCER_FLASH_FEE_PCT = 0.0; // Balancer Vault flash loans are zero-fee
+const AAVE_FLASH_FEE_PCT = 0.0009; // kept for fallback / old contract
 // Realistic price impact for a $100,000 swap on deep WBTC pools.
 // At $100k vs a $500k+ pool, price impact is roughly 0.05% per leg.
 // Smaller swaps would be less; larger swaps would be more.
@@ -26,16 +27,18 @@ const EXPECTED_PRICE_IMPACT_PCT = 0.0005;
 // A trade is only profitable if spread > buyFee + sellFee + aaveFee + slippage + gas.
 const DEX_TRADE_FEE_PCT: Record<string, number> = {
   // Arbitrum
-  "Uniswap V3":  0.0005,   // fee-500 = 0.05%
-  "SushiSwap":   0.003,    // UniV2 = 0.30%
-  "Camelot V3":  0.0005,   // V3-style ≈ 0.05%
+  "Uniswap V3":      0.0005, // fee-500 = 0.05%
+  "SushiSwap":       0.003,  // UniV2 = 0.30%
+  "Camelot V3":      0.0005, // V3-style ≈ 0.05%
+  "PancakeSwap V3":  0.0005, // fee-500 / 2500
+  "Fluid":           0.0003, // Fluid typically low fee on stables
   // Avalanche
-  "Trader Joe V2.1": 0.002, // LB V2.1 typical bin fee ≈ 0.20%
-  "Pangolin":    0.003,    // UniV2 fork = 0.30%
+  "Trader Joe V2.1": 0.002,
+  "Pangolin":        0.003,
   // Optimism
-  "Velodrome V2": 0.002,   // volatile pools = 0.20%
-  "Beethoven X":  0.003,   // Balancer-style ≈ 0.30%
-  "Curve":        0.0004,  // Curve stable = 0.04%
+  "Velodrome V2":    0.002,
+  "Beethoven X":     0.003,
+  "Curve":           0.0004,
 };
 
 function getDexFeePct(dexName: string): number {
@@ -68,7 +71,7 @@ function estimateProfit(
   const wbtcAmount = loanAmount / buyPrice;
   const grossProceeds = wbtcAmount * sellPrice;
 
-  const aaveFee      = loanAmount * AAVE_FLASH_FEE_PCT;
+  const flashFee     = loanAmount * BALANCER_FLASH_FEE_PCT; // 0 with Balancer
   const slippageCost = loanAmount * EXPECTED_PRICE_IMPACT_PCT;
   const gasCost      = estimateGasCostUsd(network);
 
@@ -78,7 +81,7 @@ function estimateProfit(
   const buyFeeCost  = loanAmount * getDexFeePct(buyDex);
   const sellFeeCost = loanAmount * getDexFeePct(sellDex);
 
-  const net = grossProceeds - loanAmount - aaveFee - slippageCost - gasCost - buyFeeCost - sellFeeCost;
+  const net = grossProceeds - loanAmount - flashFee - slippageCost - gasCost - buyFeeCost - sellFeeCost;
   const gross = grossProceeds - loanAmount;
   return { net, gross };
 }
@@ -93,14 +96,18 @@ export function detectOpportunities(
 
   const filtered = prices.filter((p) => networks.includes(p.network));
 
-  const byNetwork = new Map<string, DexPrice[]>();
+  // Group by network + pair so we only arb the same asset pair across DEXs
+  const byNetworkPair = new Map<string, DexPrice[]>();
   for (const price of filtered) {
-    const list = byNetwork.get(price.network) ?? [];
+    const pair = (price as DexPrice & { pair?: string }).pair ?? "UNKNOWN";
+    const key = `${price.network}::${pair}`;
+    const list = byNetworkPair.get(key) ?? [];
     list.push(price);
-    byNetwork.set(price.network, list);
+    byNetworkPair.set(key, list);
   }
 
-  for (const [network, networkPrices] of byNetwork) {
+  for (const [key, networkPrices] of byNetworkPair) {
+    const network = key.split("::")[0]!;
     if (networkPrices.length < 2) continue;
 
     for (let i = 0; i < networkPrices.length; i++) {
