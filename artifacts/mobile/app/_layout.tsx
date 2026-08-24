@@ -17,7 +17,46 @@ import { setBaseUrl } from "@workspace/api-client-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BotProvider } from "@/context/BotContext";
 
-setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
+/**
+ * Resolve API origin for web + native.
+ * Priority:
+ *   1. EXPO_PUBLIC_API_URL (full origin, e.g. https://host or http://localhost:3000)
+ *   2. EXPO_PUBLIC_DOMAIN (host[:port] — http for localhost, https otherwise)
+ *   3. Relative "" so web same-origin / Replit proxy can work
+ */
+function resolveApiBaseUrl(): string | null {
+  const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const domain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
+  if (domain) {
+    const host = domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    if (!host || host === "undefined" || host === "null") return null;
+    const isLocal =
+      host.startsWith("localhost") ||
+      host.startsWith("127.0.0.1") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.");
+    return `${isLocal ? "http" : "https"}://${host}`;
+  }
+
+  // Web: same origin (works behind Replit proxy if API is routed there)
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  return null;
+}
+
+const apiBase = resolveApiBaseUrl();
+if (apiBase) {
+  setBaseUrl(apiBase);
+  console.log("[api] base URL:", apiBase);
+} else {
+  console.warn(
+    "[api] No EXPO_PUBLIC_API_URL / EXPO_PUBLIC_DOMAIN — using relative paths",
+  );
+}
 
 SplashScreen.preventAutoHideAsync();
 
